@@ -76,10 +76,12 @@ fn find_references(filepath: &Path, root: &Path) {
     let mut references = Vec::new();
     let link_regex = Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap();
 
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if entry.path().extension().and_then(|s| s.to_str()) == Some("md")
-            && let Ok(content) = fs::read_to_string(entry.path())
-        {
+    for entry in WalkDir::new(root)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
+    {
+        if let Ok(content) = fs::read_to_string(entry.path()) {
             process_md_file(
                 &content,
                 entry.path(),
