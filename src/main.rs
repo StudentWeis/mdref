@@ -3,8 +3,7 @@ use clap::Parser;
 mod commands;
 
 #[derive(Parser)]
-#[command(name = "mdref")]
-#[command(about = "A tool to find and manage Markdown link references")]
+#[command(version, about)]
 struct Cli {
     #[command(subcommand)]
     command: commands::Commands,
