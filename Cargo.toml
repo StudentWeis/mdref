@@ -5,6 +5,8 @@ edition = "2024"
 authors = ["Student Wei <studentweis@gmail.com>"]
 repository = "https://github.com/studentweis/mdref"
 description = "A tool to find and manage Markdown file link references."
+readme = "README.md"
+license = "MIT"
 
 [dependencies]
 clap = { version = "4.0", features = ["derive"] }
