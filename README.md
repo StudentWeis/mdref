@@ -1,23 +1,35 @@
-***mdref***
+**_mdref_**
 
-快如闪电的 Markdown 文件引用查找、迁移工具，Rust 编写。
+Fast Markdown file reference finding and migration tool, written in Rust.
 
-# 基本使用
+# Basic Usage
 
-子命令：
+## Install & Update
 
-- find（可用🔥）
-- mv（施工中🚧）
-- rename（施工中🚧）
+Install prebuilt binaries via shell script：
 
-# 思路
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/studentweis/mdref/releases/download/0.1.1/mdref-installer.sh | sh
+```
 
-- 查找引用的思路：任意路径 >> 绝对路径，匹配绝对路径。
-- 所有写的链接都以相对路径的形式。
-- 可以指定根路径的位置。
-- 所有的命名操作支持预览。
+Install prebuilt binaries via powershell script
 
-# Roadmap
+```sh
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/studentweis/mdref/releases/download/0.1.1/mdref-installer.ps1 | iex"
+```
 
-- [ ] Benchmark
-- [ ] mv 命令 core 逻辑
+Update mdref:
+
+```sh
+mdref-update
+```
+
+## Basic command
+
+- find：🔥
+- mv：🚧
+
+# Acknowledge
+
+- clap
+- walkdir
