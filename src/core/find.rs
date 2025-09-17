@@ -50,6 +50,9 @@ fn process_md_file(
 }
 
 /// Process a single link match to see if it references the target file.
+/// Need to confirm two things:
+/// 1. The filenames of both must be identical.
+/// 2. The absolute paths of both must be identical.
 fn process_link(
     file_path: &Path,
     target_canonical: &Path,

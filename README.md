@@ -31,6 +31,10 @@ mdref-update
 - find：🔥
 - mv：🚧
 
+# Todo
+
+[ ] Fix the case of link path with space.
+
 # Acknowledge
 
 - clap
@@ -38,6 +42,6 @@ mdref-update
 - regex
 - cargo-dist
 
-# Todo
+# Contributing
 
-[ ] Fix the case of link path with space.
+If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING). Thanks.
