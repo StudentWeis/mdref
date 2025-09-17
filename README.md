@@ -1,6 +1,8 @@
 **_mdref_**
 
-Fast Markdown file reference finding and migration tool, written in Rust.
+[![crates.io](https://img.shields.io/crates/v/mdref.svg)](https://crates.io/crates/mdref)
+
+Markdown Reference finding and migration tool, written in Rust.
 
 # Basic Usage
 
@@ -33,3 +35,9 @@ mdref-update
 
 - clap
 - walkdir
+- regex
+- cargo-dist
+
+# Todo
+
+[ ] Fix the case of link path with space.

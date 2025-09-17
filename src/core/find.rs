@@ -44,21 +44,32 @@ fn process_md_file(
 ) {
     for (line_num, line) in content.lines().enumerate() {
         for cap in link_regex.captures_iter(line) {
-            let link = &cap[2];
-            let link_path = Path::new(link);
-            // Quick check: if the file names don't match, skip
-            if link_path.file_name().unwrap() != target_canonical.file_name().unwrap() {
-                continue;
+            process_link(file_path, target_canonical, references, line_num, cap);
+        }
+    }
+}
+
+/// Process a single link match to see if it references the target file.
+fn process_link(
+    file_path: &Path,
+    target_canonical: &Path,
+    references: &mut Vec<(PathBuf, usize, String)>,
+    line_num: usize,
+    cap: regex::Captures<'_>,
+) {
+    let link = &cap[2];
+    let link_path = Path::new(link);
+    // Quick check: if the file names don't match, skip
+    if link_path.file_name().unwrap() != target_canonical.file_name().unwrap() {
+        return;
+    }
+    // Resolve the link to an absolute path
+    if let Some(resolved_path) = resolve_link(file_path, link_path) {
+        match resolved_path.canonicalize() {
+            Ok(canonical) if canonical == *target_canonical => {
+                references.push((file_path.to_path_buf(), line_num + 1, link.to_string()));
             }
-            // Resolve the link to an absolute path
-            if let Some(resolved_path) = resolve_link(file_path, link_path) {
-                match resolved_path.canonicalize() {
-                    Ok(canonical) if canonical == *target_canonical => {
-                        references.push((file_path.to_path_buf(), line_num + 1, link.to_string()));
-                    }
-                    _ => {}
-                }
-            }
+            _ => {}
         }
     }
 }
