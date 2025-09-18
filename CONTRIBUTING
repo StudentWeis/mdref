@@ -3,3 +3,10 @@ Thanks to contribute to the mdref project!
 There are some things to note before you submit your PR.
 
 1. AI-assisted code generation is permitted, but it must be manually reviewed by the contributor and indicated as "AI-assisted" in the PR.
+
+
+# Bench
+
+```sh
+cargo bench
+```

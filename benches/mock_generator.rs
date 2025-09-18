@@ -6,7 +6,7 @@ const MOCK_TEXT: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit
 
 /// Controls the depth of directory nesting.
 /// For example, with `DIR_DEPTH = 2` files will be placed under `mock_data/dirX/sub0/.../fileY.md`.
-const DIR_DEPTH: usize = 2;
+const DIR_DEPTH: usize = 3;
 
 /// Controls the number of subdirectories per directory.
 const SUBDIRS_PER_DIR: usize = 5;
