@@ -34,6 +34,8 @@ mdref-update
 # Todo
 
 [ ] Fix the case of link path with space.
+[ ] Cardo-dist oranda homepage.
+[ ] Benchmark.
 
 # Acknowledge
 

@@ -15,22 +15,21 @@ pub fn find_references(
     let link_regex = Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap();
 
     // Find all Markdown files and check links
-    for entry in WalkDir::new(root)
+    WalkDir::new(root)
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-    {
-        if let Ok(content) = fs::read_to_string(entry.path()) {
-            process_md_file(
-                &content,
-                entry.path(),
-                &link_regex,
-                &target_canonical,
-                &mut references,
-            );
-        }
-    }
-
+        .for_each(|entry| {
+            if let Ok(content) = fs::read_to_string(entry.path()) {
+                process_md_file(
+                    &content,
+                    entry.path(),
+                    &link_regex,
+                    &target_canonical,
+                    &mut references,
+                );
+            }
+        });
     Ok(references)
 }
 
@@ -42,11 +41,11 @@ fn process_md_file(
     target_canonical: &Path,
     references: &mut Vec<(PathBuf, usize, String)>,
 ) {
-    for (line_num, line) in content.lines().enumerate() {
+    content.lines().enumerate().for_each(|(line_num, line)| {
         for cap in link_regex.captures_iter(line) {
             process_link(file_path, target_canonical, references, line_num, cap);
         }
-    }
+    });
 }
 
 /// Process a single link match to see if it references the target file.
