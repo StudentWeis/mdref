@@ -42,6 +42,7 @@ mdref-update
 - clap
 - walkdir
 - regex
+- rayon
 - cargo-dist
 
 # Contributing

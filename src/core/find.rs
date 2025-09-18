@@ -1,3 +1,4 @@
+use rayon::prelude::*;
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -10,26 +11,21 @@ pub fn find_references(
     root: &Path,
 ) -> Result<Vec<(PathBuf, usize, String)>, std::io::Error> {
     let target_canonical = filepath.canonicalize()?;
-
-    let mut references = Vec::new();
     let link_regex = Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap();
 
-    // Find all Markdown files and check links
-    WalkDir::new(root)
+    // Find all Markdown files and check links.
+    let references: Vec<_> = WalkDir::new(root)
         .into_iter()
+        .par_bridge()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-        .for_each(|entry| {
-            if let Ok(content) = fs::read_to_string(entry.path()) {
-                process_md_file(
-                    &content,
-                    entry.path(),
-                    &link_regex,
-                    &target_canonical,
-                    &mut references,
-                );
-            }
-        });
+        .filter_map(|entry| {
+            fs::read_to_string(entry.path()).ok().map(|content| {
+                process_md_file(&content, entry.path(), &link_regex, &target_canonical)
+            })
+        })
+        .flatten()
+        .collect();
     Ok(references)
 }
 
@@ -39,13 +35,16 @@ fn process_md_file(
     file_path: &Path,
     link_regex: &Regex,
     target_canonical: &Path,
-    references: &mut Vec<(PathBuf, usize, String)>,
-) {
-    content.lines().enumerate().for_each(|(line_num, line)| {
+) -> Vec<(PathBuf, usize, String)> {
+    let mut results = Vec::new();
+    for (line_num, line) in content.lines().enumerate() {
         for cap in link_regex.captures_iter(line) {
-            process_link(file_path, target_canonical, references, line_num, cap);
+            if let Some(res) = process_link(file_path, target_canonical, line_num, &cap[2]) {
+                results.push(res);
+            }
         }
-    });
+    }
+    results
 }
 
 /// Process a single link match to see if it references the target file.
@@ -55,24 +54,24 @@ fn process_md_file(
 fn process_link(
     file_path: &Path,
     target_canonical: &Path,
-    references: &mut Vec<(PathBuf, usize, String)>,
     line_num: usize,
-    cap: regex::Captures<'_>,
-) {
-    let link = &cap[2];
+    link: &str,
+) -> Option<(PathBuf, usize, String)> {
     let link_path = Path::new(link);
     // Quick check: if the file names don't match, skip
     if link_path.file_name().unwrap() != target_canonical.file_name().unwrap() {
-        return;
+        return None;
     }
     // Resolve the link to an absolute path
     if let Some(resolved_path) = resolve_link(file_path, link_path) {
         match resolved_path.canonicalize() {
             Ok(canonical) if canonical == *target_canonical => {
-                references.push((file_path.to_path_buf(), line_num + 1, link.to_string()));
+                Some((file_path.to_path_buf(), line_num + 1, link.to_string()))
             }
-            _ => {}
+            _ => None,
         }
+    } else {
+        None
     }
 }
 
