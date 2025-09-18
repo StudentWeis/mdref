@@ -9,7 +9,7 @@ fn benchmark_find_references(c: &mut Criterion) {
     // Generate mock data before running benchmarks
     mock_generator::generate().expect("Failed to generate mock data");
 
-    let filepath = Path::new("mock_data/file0.md");
+    let filepath = Path::new("mock_data/root.md");
     let root = Path::new("mock_data");
 
     println!("Setting up benchmark");

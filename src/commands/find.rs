@@ -1,15 +1,11 @@
 use mdref::find_references;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 pub fn run(filepath: String, root: Option<String>) {
     let root_path = root
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let file_path = if Path::new(&filepath).is_absolute() {
-        PathBuf::from(&filepath)
-    } else {
-        PathBuf::from(".").join(&filepath)
-    };
+    let file_path = PathBuf::from(&filepath);
 
     match find_references(&file_path, &root_path) {
         Ok(references) => {

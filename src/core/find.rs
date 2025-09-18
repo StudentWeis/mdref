@@ -2,7 +2,14 @@ use rayon::prelude::*;
 use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use walkdir::WalkDir;
+
+/// Compile the regex once and reuse it.
+static LINK_REGEX: OnceLock<Regex> = OnceLock::new();
+fn get_link_regex() -> &'static Regex {
+    LINK_REGEX.get_or_init(|| Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap())
+}
 
 /// Find all references to a given file within Markdown files in the specified root directory.
 /// Returns a vector of tuples containing the referencing file path, line number, and the link text.
@@ -11,22 +18,30 @@ pub fn find_references(
     root: &Path,
 ) -> Result<Vec<(PathBuf, usize, String)>, std::io::Error> {
     let target_canonical = filepath.canonicalize()?;
-    let link_regex = Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap();
+    let references: Vec<_> = find_references_iter(&target_canonical, root).collect();
+    Ok(references)
+}
+
+/// Find all references to a given file within Markdown files in the specified root directory.
+/// Returns an iterator of tuples containing the referencing file path, line number, and the link text.
+fn find_references_iter(
+    target_canonical: &Path,
+    root: &Path,
+) -> impl ParallelIterator<Item = (PathBuf, usize, String)> {
+    let link_regex = get_link_regex();
 
     // Find all Markdown files and check links.
-    let references: Vec<_> = WalkDir::new(root)
+    WalkDir::new(root)
         .into_iter()
         .par_bridge()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-        .filter_map(|entry| {
-            fs::read_to_string(entry.path()).ok().map(|content| {
-                process_md_file(&content, entry.path(), &link_regex, &target_canonical)
+        .filter_map(move |entry| {
+            fs::read_to_string(entry.path()).ok().map(move |content| {
+                process_md_file(&content, entry.path(), link_regex, target_canonical)
             })
         })
         .flatten()
-        .collect();
-    Ok(references)
 }
 
 /// Process a single Markdown file's content to find links referencing the target file.
