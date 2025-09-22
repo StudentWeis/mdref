@@ -18,8 +18,7 @@ pub fn find_references(
     root: &Path,
 ) -> Result<Vec<(PathBuf, usize, String)>, std::io::Error> {
     let target_canonical = filepath.canonicalize()?;
-    let references: Vec<_> = find_references_iter(&target_canonical, root).collect();
-    Ok(references)
+    Ok(find_references_iter(&target_canonical, root).collect())
 }
 
 /// Find all references to a given file within Markdown files in the specified root directory.
