@@ -12,21 +12,18 @@ fn get_link_regex() -> &'static Regex {
 }
 
 /// Find all references to a given file within Markdown files in the specified root directory.
-/// Returns a vector of tuples containing the referencing file path, line number, and the link text.
-pub fn find_references(
-    filepath: &Path,
-    root: &Path,
-) -> Result<Vec<(PathBuf, usize, String)>, std::io::Error> {
+/// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
+pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<References>, std::io::Error> {
     let target_canonical = filepath.canonicalize()?;
     Ok(find_references_iter(&target_canonical, root).collect())
 }
 
 /// Find all references to a given file within Markdown files in the specified root directory.
-/// Returns an iterator of tuples containing the referencing file path, line number, and the link text.
+/// Returns an iterator of References containing the referencing file path, line number, column number, and the link text.
 fn find_references_iter(
     target_canonical: &Path,
     root: &Path,
-) -> impl ParallelIterator<Item = (PathBuf, usize, String)> {
+) -> impl ParallelIterator<Item = References> {
     let link_regex = get_link_regex();
 
     // Find all Markdown files and check links.
@@ -49,11 +46,18 @@ fn process_md_file(
     file_path: &Path,
     link_regex: &Regex,
     target_canonical: &Path,
-) -> Vec<(PathBuf, usize, String)> {
+) -> Vec<References> {
     let mut results = Vec::new();
     for (line_num, line) in content.lines().enumerate() {
         for cap in link_regex.captures_iter(line) {
-            if let Some(res) = process_link(file_path, target_canonical, line_num, &cap[2]) {
+            let start_byte = cap.get(0).unwrap().start();
+            let column = line
+                .char_indices()
+                .position(|(byte_idx, _)| byte_idx >= start_byte)
+                .unwrap_or(line.chars().count())
+                + 1;
+            if let Some(res) = process_link(file_path, target_canonical, line_num, column, &cap[2])
+            {
                 results.push(res);
             }
         }
@@ -69,8 +73,9 @@ fn process_link(
     file_path: &Path,
     target_canonical: &Path,
     line_num: usize,
+    column: usize,
     link: &str,
-) -> Option<(PathBuf, usize, String)> {
+) -> Option<References> {
     let link_path = Path::new(link);
     // Quick check: if the file names don't match, skip
     if link_path.file_name().unwrap() != target_canonical.file_name().unwrap() {
@@ -79,9 +84,12 @@ fn process_link(
     // Resolve the link to an absolute path
     if let Some(resolved_path) = resolve_link(file_path, link_path) {
         match resolved_path.canonicalize() {
-            Ok(canonical) if canonical == *target_canonical => {
-                Some((file_path.to_path_buf(), line_num + 1, link.to_string()))
-            }
+            Ok(canonical) if canonical == *target_canonical => Some(References::new(
+                file_path.to_path_buf(),
+                line_num + 1,
+                column,
+                link.to_string(),
+            )),
             _ => None,
         }
     } else {
@@ -102,5 +110,26 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
             }
         }
         None
+    }
+}
+
+/// Struct to hold reference information
+#[derive(Debug)]
+pub struct References {
+    pub path: PathBuf,
+    pub line: usize,
+    pub column: usize,
+    pub link_text: String,
+}
+
+/// Constructor for References
+impl References {
+    fn new(path: PathBuf, line: usize, column: usize, link_text: String) -> Self {
+        Self {
+            path,
+            line,
+            column,
+            link_text,
+        }
     }
 }

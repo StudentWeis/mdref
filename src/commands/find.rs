@@ -13,8 +13,8 @@ pub fn run(filepath: String, root: Option<String>) {
                 println!("No references found for {}", file_path.display());
             } else {
                 println!("References to {}:", file_path.display());
-                for (file, line, link) in references {
-                    println!("  {}:{} - {}", file.display(), line, link);
+                for reference in references {
+                    println!("  {}:{}:{} - {}", reference.path.display(), reference.line, reference.column, reference.link_text);
                 }
             }
         }
