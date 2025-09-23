@@ -1,1 +1,1 @@
-测试 test  [](./main.md)
+测试 test  [](main.md)

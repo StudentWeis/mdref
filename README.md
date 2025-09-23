@@ -30,8 +30,8 @@ mdref-update
 
 ## Basic command
 
-- find：🔥
-- mv：🚧
+- find 🔍：Find all markdown references in the specified directory.
+- mv 🔥：Move file and update markdown references.
 
 # Todo
 
@@ -42,12 +42,13 @@ mdref-update
 
 - clap
 - walkdir
+- pathdiff
 - regex
 - rayon
 - cargo-dist
 
 # Contributing
 
-If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING). 
+If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING).
 
 Thanks for your help!
