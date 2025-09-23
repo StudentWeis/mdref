@@ -35,11 +35,11 @@ mdref-update
 
 # Todo
 
-[ ] Fix the case of link path with space.
-[ ] Preview mode of mv command.
-[ ] More tests.
-[ ] More documentations.
-[ ] Cargo-dist oranda homepage.
+- [ ] Fix the case of link path with space.
+- [ ] Preview mode of mv command.
+- [ ] More tests.
+- [ ] More documentations.
+- [ ] Cargo-dist oranda homepage.
 
 # Acknowledge
 

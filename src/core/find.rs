@@ -1,5 +1,6 @@
 use rayon::prelude::*;
 use regex::Regex;
+use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
@@ -122,8 +123,8 @@ pub struct References {
     pub link_text: String,
 }
 
-/// Constructor for References
 impl References {
+    /// Constructor for References
     fn new(path: PathBuf, line: usize, column: usize, link_text: String) -> Self {
         Self {
             path,
@@ -131,5 +132,19 @@ impl References {
             column,
             link_text,
         }
+    }
+}
+
+impl Display for References {
+    /// Format as "path:line:column - link_text"
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "{}:{}:{} - {}",
+            self.path.display(),
+            self.line,
+            self.column,
+            self.link_text
+        )
     }
 }

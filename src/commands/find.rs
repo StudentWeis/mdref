@@ -14,7 +14,7 @@ pub fn run(filepath: String, root: Option<String>) {
             } else {
                 println!("References to {}:", file_path.display());
                 for reference in references {
-                    println!("  {}:{}:{} - {}", reference.path.display(), reference.line, reference.column, reference.link_text);
+                    println!("{}", reference);
                 }
             }
         }

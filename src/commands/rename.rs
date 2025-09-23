@@ -5,9 +5,13 @@ pub fn run(old: String, new: String, root: Option<String>) {
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
 
-    // Placeholder: implement rename logic here.
-    // For now we just print out the intended operation.
-    println!("(rename) Rename {} -> {} in {}", old, new, root_path.display());
-
-    // TODO: Update markdown links similar to `find.rs` logic.
+    let old_path = PathBuf::from(&old);
+    let new_path = old_path.with_file_name(&new);
+    println!(
+        "(rename) Rename {} -> {} in {}",
+        old_path.display(),
+        new_path.display(),
+        root_path.display()
+    );
+    mdref::mv_references(&old_path, &new_path, &root_path);
 }
