@@ -4,6 +4,8 @@
 
 Markdown Reference finding and migration tool, written in Rust.
 
+Processed 155 directories with 1561 files in just 1ms.
+
 # Basic Usage
 
 ## Install & Update
@@ -35,7 +37,6 @@ mdref-update
 
 [ ] Fix the case of link path with space.
 [ ] Cardo-dist oranda homepage.
-[ ] Benchmark.
 
 # Acknowledge
 
@@ -47,4 +48,6 @@ mdref-update
 
 # Contributing
 
-If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING). Thanks.
+If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING). 
+
+Thanks for your help!

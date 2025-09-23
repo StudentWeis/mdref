@@ -13,6 +13,7 @@ clap = { version = "4.5", features = ["derive"] }
 walkdir = "2.3"
 regex = "1.5"
 rayon = "1.11.0"
+pathdiff = "0.2"
 
 [dev-dependencies]
 criterion = "0.7"
