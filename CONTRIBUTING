@@ -10,3 +10,11 @@ There are some things to note before you submit your PR.
 ```sh
 cargo bench
 ```
+
+# Release
+
+```sh
+git tag *.*.*
+git push --tags
+git publish
+```

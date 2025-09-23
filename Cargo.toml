@@ -1,6 +1,6 @@
 [package]
 name = "mdref"
-version = "0.1.3"
+version = "0.2.0"
 edition = "2024"
 authors = ["Student Wei <studentweis@gmail.com>"]
 repository = "https://github.com/studentweis/mdref"
@@ -9,7 +9,7 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5.48", features = ["derive"] }
 walkdir = "2.3"
 regex = "1.5"
 rayon = "1.11.0"

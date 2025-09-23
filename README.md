@@ -13,13 +13,13 @@ Processed 155 directories with 1561 files in just 1ms.
 Install prebuilt binaries via shell script：
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/studentweis/mdref/releases/download/0.1.3/mdref-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/studentweis/mdref/releases/download/0.2.0/mdref-installer.sh | sh
 ```
 
 Install prebuilt binaries via powershell script
 
 ```sh
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/studentweis/mdref/releases/download/0.1.3/mdref-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/studentweis/mdref/releases/download/0.2.0/mdref-installer.ps1 | iex"
 ```
 
 Update mdref:
@@ -36,7 +36,10 @@ mdref-update
 # Todo
 
 [ ] Fix the case of link path with space.
-[ ] Cardo-dist oranda homepage.
+[ ] Preview mode of mv command.
+[ ] More tests.
+[ ] More documentations.
+[ ] Cargo-dist oranda homepage.
 
 # Acknowledge
 
