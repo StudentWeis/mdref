@@ -1,4 +1,4 @@
-use mdref::find_references;
+use mdref::{find_links, find_references};
 use std::path::PathBuf;
 
 pub fn run(filepath: String, root: Option<String>) {
@@ -24,6 +24,22 @@ pub fn run(filepath: String, root: Option<String>) {
                 file_path.display(),
                 e
             );
+        }
+    }
+
+    match find_links(&file_path) {
+        Ok(links) => {
+            if links.is_empty() {
+                println!("No links found in {}", file_path.display());
+            } else {
+                println!("Links in {}:", file_path.display());
+                for link in links {
+                    println!("{}", link);
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("Error finding links in {}: {}", file_path.display(), e);
         }
     }
 }
