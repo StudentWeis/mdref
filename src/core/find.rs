@@ -14,7 +14,7 @@ fn get_link_regex() -> &'static Regex {
 
 /// Find all references to a given file within Markdown files in the specified root directory.
 /// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
-pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<References>, std::io::Error> {
+pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<Reference>, std::io::Error> {
     let target_canonical = filepath.canonicalize()?;
     let link_regex = get_link_regex();
     Ok(WalkDir::new(root)
@@ -32,8 +32,8 @@ pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<References>, 
 }
 
 /// Process a single Markdown file to find any file links.
-pub fn find_links(filepath: &Path) -> Result<Vec<References>, std::io::Error> {
-    // Only markdown files are processed
+pub fn find_links(filepath: &Path) -> Result<Vec<Reference>, std::io::Error> {
+    // Only markdown files are processed.
     if filepath.extension().and_then(|s| s.to_str()) != Some("md") {
         return Ok(Vec::new());
     }
@@ -48,7 +48,7 @@ fn process_md_file(
     file_path: &Path,
     link_regex: &Regex,
     target_canonical: Option<&Path>,
-) -> Vec<References> {
+) -> Vec<Reference> {
     let mut results = Vec::new();
     for (line_num, line) in content.lines().enumerate() {
         for cap in link_regex.captures_iter(line) {
@@ -59,7 +59,7 @@ fn process_md_file(
                     .position(|(byte_idx, _)| byte_idx >= start_byte)
                     .unwrap_or(line.chars().count())
                     + 1;
-                results.push(References::new(
+                results.push(Reference::new(
                     file_path.to_path_buf(),
                     line_num + 1,
                     column,
@@ -72,6 +72,7 @@ fn process_md_file(
 }
 
 /// Process a single link match to see if it references the target file.
+/// If target is none, return true.
 /// Need to confirm two things:
 /// 1. The filenames of both must be identical.
 /// 2. The absolute paths of both must be identical.
@@ -111,14 +112,14 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
 
 /// Struct to hold reference information
 #[derive(Debug)]
-pub struct References {
+pub struct Reference {
     pub path: PathBuf,
     pub line: usize,
     pub column: usize,
     pub link_text: String,
 }
 
-impl References {
+impl Reference {
     /// Constructor for References
     fn new(path: PathBuf, line: usize, column: usize, link_text: String) -> Self {
         Self {
@@ -130,7 +131,7 @@ impl References {
     }
 }
 
-impl Display for References {
+impl Display for Reference {
     /// Format as "path:line:column - link_text"
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(

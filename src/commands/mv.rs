@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use mdref::mv_references;
+use mdref::mv_file;
 
 pub fn run(source: String, dest: String, root: Option<String>) {
     let root_path = root
@@ -10,5 +10,5 @@ pub fn run(source: String, dest: String, root: Option<String>) {
     let dest_path = PathBuf::from(&dest);
 
     println!("Move {} -> {} in {}", source, dest, root_path.display());
-    mv_references(&source_path, &dest_path, &root_path);
+    mv_file(&source_path, &dest_path, &root_path);
 }

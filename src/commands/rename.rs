@@ -13,5 +13,5 @@ pub fn run(old: String, new: String, root: Option<String>) {
         new_path.display(),
         root_path.display()
     );
-    mdref::mv_references(&old_path, &new_path, &root_path);
+    mdref::mv_file(&old_path, &new_path, &root_path);
 }
