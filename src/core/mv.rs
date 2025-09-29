@@ -1,13 +1,12 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{Reference, find_links};
-
-use super::find::find_references;
+use crate::{Reference, find_links, find_references};
 use pathdiff::diff_paths;
 
 /// Move references from the old file path to the new file path within Markdown files in the specified root directory.
 /// This function finds all references to the old file and updates them to point to the new file.
+/// Moreover, it updates links within the moved file itself to ensure they remain valid.
 pub fn mv_file(raw_filepath: &Path, new_filepath: &Path, root: &Path) {
     // Ensure the parent directory of the new file path exists.
     if let Some(parent) = new_filepath.parent()
@@ -18,6 +17,7 @@ pub fn mv_file(raw_filepath: &Path, new_filepath: &Path, root: &Path) {
     }
 
     // Copy the original file to the new file path.
+    // We copy first to avoid data loss in case of errors during reference updates.
     if let Err(e) = fs::copy(raw_filepath, new_filepath) {
         eprintln!(
             "Error copying file from {} to {}: {}",
@@ -28,6 +28,7 @@ pub fn mv_file(raw_filepath: &Path, new_filepath: &Path, root: &Path) {
         return;
     }
 
+    // Find all references to the old file path within the specified root directory.
     let references = find_references(raw_filepath, root);
     match references {
         Ok(refs) => {
@@ -59,6 +60,7 @@ pub fn mv_file(raw_filepath: &Path, new_filepath: &Path, root: &Path) {
     }
 }
 
+/// Update a link within a Markdown file to point to the new file location.
 fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
     let current_link_absolute_path = raw_filepath
         .parent()
@@ -74,51 +76,23 @@ fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
     }
 
     let new_link_path = relative_path(&new_file_absolute_path, &current_link_absolute_path);
-    let content = match fs::read_to_string(&r.path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error reading file {}: {}", r.path.display(), e);
-            return;
-        }
-    };
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    if r.line > lines.len() {
-        eprintln!(
-            "Line number {} out of range for file {}",
-            r.line,
-            r.path.display()
-        );
-        return;
-    }
-    let line = &lines[r.line - 1];
-    let old_pattern = format!("]({})", r.link_text);
-    let new_pattern = format!("]({})", new_link_path.display());
-    if line.contains(&old_pattern) {
-        let new_line = line.replace(&old_pattern, &new_pattern);
-        lines[r.line - 1] = new_line;
-        let new_content = lines.join("\n");
-        if let Err(e) = fs::write(&r.path, new_content) {
-            eprintln!("Error writing file {}: {}", r.path.display(), e);
-        }
-    } else {
-        eprintln!(
-            "Could not find link in line {} of file {}",
-            r.line,
-            r.path.display()
-        );
-    }
+    replace_link_in_file(r, new_link_path);
 }
 
+/// Update a reference within a Markdown file to point to the new file location.
 fn update_reference(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
     // Skip updating references in the file itself.
     if r.path.canonicalize().unwrap_or_default() == raw_filepath.canonicalize().unwrap_or_default()
     {
         return;
     }
-
     let current_file_path = &r.path;
-    // Compute the relative path from the current file to the new file location.
     let new_link_path = relative_path(current_file_path, new_filepath);
+    replace_link_in_file(r, new_link_path);
+}
+
+/// Replace the old link in the specified file with the new link path.
+fn replace_link_in_file(r: &Reference, new_link_path: PathBuf) {
     let content = match fs::read_to_string(&r.path) {
         Ok(c) => c,
         Err(e) => {
@@ -154,6 +128,7 @@ fn update_reference(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
     }
 }
 
+/// Compute the relative path from one file to another.
 fn relative_path(from: &Path, to: &Path) -> PathBuf {
     diff_paths(
         to.canonicalize().unwrap_or_default(),

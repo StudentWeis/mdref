@@ -7,6 +7,7 @@ pub fn run(filepath: String, root: Option<String>) {
         .unwrap_or_else(|| PathBuf::from("."));
     let file_path = PathBuf::from(&filepath);
 
+    // Find references to the specified file.
     match find_references(&file_path, &root_path) {
         Ok(references) => {
             if references.is_empty() {
@@ -27,6 +28,7 @@ pub fn run(filepath: String, root: Option<String>) {
         }
     }
 
+    // Find all links within the specified file.
     match find_links(&file_path) {
         Ok(links) => {
             if links.is_empty() {

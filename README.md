@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/mdref.svg)](https://crates.io/crates/mdref)
 
-Markdown Reference finding and migration tool which processed 155 directories with 1561 files in just 1ms, written in Rust
+A fast, Rust-based tool for discovering and migrating Markdown references — it processed 155 directories and 1,561 files in just 1 ms.
 
 > [!CAUTION]
 > This project is still in early development, and some features may not be fully functional. Please use it with caution and report any issues you encounter.

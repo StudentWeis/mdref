@@ -8,7 +8,7 @@ pub fn run(old: String, new: String, root: Option<String>) {
     let old_path = PathBuf::from(&old);
     let new_path = old_path.with_file_name(&new);
     println!(
-        "(rename) Rename {} -> {} in {}",
+        "Rename {} -> {} in {}",
         old_path.display(),
         new_path.display(),
         root_path.display()

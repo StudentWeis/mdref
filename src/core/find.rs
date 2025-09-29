@@ -71,11 +71,14 @@ fn process_md_file(
     results
 }
 
-/// Process a single link match to see if it references the target file.
-/// If target is none, return true.
-/// Need to confirm two things:
-/// 1. The filenames of both must be identical.
-/// 2. The absolute paths of both must be identical.
+/// Determine whether a markdown link (found in `file_path`) refers to `target_canonical`.
+///
+/// - If `target_canonical` is `None`, this function returns `true` (used when simply collecting links).
+/// - If `Some(target)`, the link is considered a match only when:
+///   1. The file name component of the link equals the target's file name, and
+///   2. Resolving the link relative to `file_path` and canonicalizing it yields the same absolute path as `target`.
+///
+/// Returns `true` when both checks succeed; otherwise `false`.
 fn process_link(file_path: &Path, target_canonical: Option<&Path>, link: &str) -> bool {
     if let Some(target) = target_canonical {
         let link_path = Path::new(link);
