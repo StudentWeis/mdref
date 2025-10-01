@@ -14,13 +14,13 @@ A fast, Rust-based tool for discovering and migrating Markdown references — it
 Install prebuilt binaries via shell script：
 
 ```sh
-curl --proto '=https' --tlsv1.2 -LsSf https://github.com/studentweis/mdref/releases/download/0.3.2/mdref-installer.sh | sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/studentweis/mdref/releases/download/0.3.3/mdref-installer.sh | sh
 ```
 
 Install prebuilt binaries via powershell script
 
 ```sh
-powershell -ExecutionPolicy Bypass -c "irm https://github.com/studentweis/mdref/releases/download/0.3.2/mdref-installer.ps1 | iex"
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/studentweis/mdref/releases/download/0.3.3/mdref-installer.ps1 | iex"
 ```
 
 Update mdref:
