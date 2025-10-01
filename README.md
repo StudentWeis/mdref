@@ -35,6 +35,27 @@ mdref-update
 - mv 🔥：Move file and update markdown references.
 - rename 🔄：Rename file and update markdown references.
 
+```sh
+$ mdref find ./examples/main.md
+
+References to ./examples/main.md:
+./examples/inner/sub/other.md:3:1 - ../../main.md
+./examples/other.md:7:1 - main.md
+./examples/inner/other.md:3:1 - ../main.md
+./examples/main.md:7:1 - main.md
+./examples/inner/sub/main.md:3:1 - ../../main.md
+./examples/inner/main.md:3:1 - ../main.md
+Links in ./examples/main.md:
+./examples/main.md:3:2 - main.jpg
+./examples/main.md:5:2 - main.jpg
+./examples/main.md:7:1 - main.md
+./examples/main.md:7:25 - inner/main.md
+./examples/main.md:7:55 - inner/sub/main.md
+./examples/main.md:9:1 - other.md
+./examples/main.md:9:27 - inner/other.md
+./examples/main.md:9:59 - inner/sub/other.md
+```
+
 # Todo
 
 - [ ] Fix the case of link path with space.
@@ -43,6 +64,7 @@ mdref-update
 - [ ] More documentations.
 - [ ] Error handling.
 - [ ] Cargo-dist oranda homepage.
+- [ ] VSCode extension.
 
 # Acknowledge
 

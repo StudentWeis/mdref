@@ -3,28 +3,28 @@ use regex::Regex;
 use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use walkdir::WalkDir;
 
-/// Compile the regex once and reuse it.
-static LINK_REGEX: OnceLock<Regex> = OnceLock::new();
-fn get_link_regex() -> &'static Regex {
-    LINK_REGEX.get_or_init(|| Regex::new(r"\[([^\]]*)\]\(([^)]+)\)").unwrap())
-}
+/// Regular expression to match Markdown links of the form `[text](link)`.
+static LINK_REGEX: &str = r"\[([^\]]*)\]\(([^)]+)\)";
 
 /// Find all references to a given file within Markdown files in the specified root directory.
 /// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
-pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<Reference>, std::io::Error> {
-    let target_canonical = filepath.canonicalize()?;
-    let link_regex = get_link_regex();
-    Ok(WalkDir::new(root)
+pub fn find_references<P, B>(path: P, root_dir: B) -> Result<Vec<Reference>, std::io::Error>
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+{
+    let canonical_path = path.as_ref().canonicalize()?;
+    let link_regex = Regex::new(LINK_REGEX).unwrap();
+    Ok(WalkDir::new(root_dir)
         .into_iter()
         .par_bridge()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
         .filter_map(move |entry| {
             fs::read_to_string(entry.path()).ok().map(|content| {
-                process_md_file(&content, entry.path(), link_regex, Some(&target_canonical))
+                process_md_file(&content, entry.path(), &link_regex, Some(&canonical_path))
             })
         })
         .flatten()
@@ -32,14 +32,16 @@ pub fn find_references(filepath: &Path, root: &Path) -> Result<Vec<Reference>, s
 }
 
 /// Process a single Markdown file to find any file links.
-pub fn find_links(filepath: &Path) -> Result<Vec<Reference>, std::io::Error> {
+pub fn find_links<P: AsRef<Path>>(filepath: P) -> Result<Vec<Reference>, std::io::Error> {
+    let filepath = filepath.as_ref();
+
     // Only markdown files are processed.
     if filepath.extension().and_then(|s| s.to_str()) != Some("md") {
         return Ok(Vec::new());
     }
-    let link_regex = get_link_regex();
+    let link_regex = Regex::new(LINK_REGEX).unwrap();
     let content = fs::read_to_string(filepath)?;
-    Ok(process_md_file(&content, filepath, link_regex, None))
+    Ok(process_md_file(&content, filepath, &link_regex, None))
 }
 
 /// Process a single Markdown file's content to find links referencing the target file.

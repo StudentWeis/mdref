@@ -7,54 +7,64 @@ use pathdiff::diff_paths;
 /// Move references from the old file path to the new file path within Markdown files in the specified root directory.
 /// This function finds all references to the old file and updates them to point to the new file.
 /// Moreover, it updates links within the moved file itself to ensure they remain valid.
-pub fn mv_file(raw_filepath: &Path, new_filepath: &Path, root: &Path) {
+pub fn mv_file<P, B, D>(raw_file_path: P, new_file_path: B, root_dir: D)
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+    D: AsRef<Path>,
+{
+    let raw_file_path = raw_file_path.as_ref();
+    let new_file_path = new_file_path.as_ref();
+    let root_dir = root_dir.as_ref();
+
     // Ensure the parent directory of the new file path exists.
-    if let Some(parent) = new_filepath.parent()
+    if let Some(parent) = new_file_path.parent()
         && let Err(e) = fs::create_dir_all(parent)
     {
         eprintln!("Error creating directories for {}: {}", parent.display(), e);
         return;
     }
 
+    // Find all references to the old file path within the specified root directory.
+    let references = find_references(raw_file_path, root_dir);
+
     // Copy the original file to the new file path.
     // We copy first to avoid data loss in case of errors during reference updates.
-    if let Err(e) = fs::copy(raw_filepath, new_filepath) {
+    if let Err(e) = fs::copy(raw_file_path, new_file_path) {
         eprintln!(
             "Error copying file from {} to {}: {}",
-            raw_filepath.display(),
-            new_filepath.display(),
+            raw_file_path.display(),
+            new_file_path.display(),
             e
         );
         return;
     }
 
-    // Find all references to the old file path within the specified root directory.
-    let references = find_references(raw_filepath, root);
     match references {
         Ok(refs) => {
             // Update all references to point to the new file path.
             for r in refs {
-                update_reference(&r, raw_filepath, new_filepath);
+                update_reference(&r, new_file_path);
             }
         }
         Err(e) => eprintln!("Error finding references: {}", e),
     }
 
-    let links = find_links(new_filepath);
+    let links = find_links(new_file_path);
     match links {
         Ok(links) => {
             for r in links {
-                update_link(&r, raw_filepath, new_filepath);
+                update_link(&r, raw_file_path, new_file_path);
             }
         }
         Err(e) => eprintln!("Error finding links: {}", e),
     }
 
     // Remove the original file after updating references.
-    if let Err(e) = fs::remove_file(raw_filepath) {
+    if let Err(e) = fs::remove_file(raw_file_path) {
         eprintln!(
             "Error removing original file {}: {}",
-            raw_filepath.display(),
+            raw_file_path.display(),
             e
         );
     }
@@ -70,22 +80,17 @@ fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
         .unwrap();
     let new_file_absolute_path = new_filepath.canonicalize().unwrap();
 
-    // Skip updating links that point to the file itself.
-    if current_link_absolute_path.eq(&raw_filepath.canonicalize().unwrap_or_default()) {
-        return;
-    }
-
-    let new_link_path = relative_path(&new_file_absolute_path, &current_link_absolute_path);
+    let new_link_path =
+        if current_link_absolute_path.eq(&raw_filepath.canonicalize().unwrap_or_default()) {
+            PathBuf::from(new_file_absolute_path.file_name().unwrap())
+        } else {
+            relative_path(&new_file_absolute_path, &current_link_absolute_path)
+        };
     replace_link_in_file(r, new_link_path);
 }
 
 /// Update a reference within a Markdown file to point to the new file location.
-fn update_reference(r: &Reference, raw_filepath: &Path, new_filepath: &Path) {
-    // Skip updating references in the file itself.
-    if r.path.canonicalize().unwrap_or_default() == raw_filepath.canonicalize().unwrap_or_default()
-    {
-        return;
-    }
+fn update_reference(r: &Reference, new_filepath: &Path) {
     let current_file_path = &r.path;
     let new_link_path = relative_path(current_file_path, new_filepath);
     replace_link_in_file(r, new_link_path);
@@ -135,4 +140,12 @@ fn relative_path(from: &Path, to: &Path) -> PathBuf {
         from.parent().unwrap().canonicalize().unwrap_or_default(),
     )
     .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_update_link() {
+        todo!()
+    }
 }
