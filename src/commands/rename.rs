@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-pub fn run(old: String, new: String, root: Option<String>) {
+use mdref::{Result, mv_file};
+
+pub fn run(old: String, new: String, root: Option<String>) -> Result<()> {
     let root_path = root.unwrap_or_else(|| ".".to_string());
     let old_path = PathBuf::from(&old);
     let new_path = old_path.with_file_name(&new);
@@ -9,5 +11,5 @@ pub fn run(old: String, new: String, root: Option<String>) {
         old_path.display(),
         new_path.display()
     );
-    mdref::mv_file(&old_path, &new_path, &root_path);
+    mv_file(&old_path, &new_path, &root_path)
 }

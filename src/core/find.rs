@@ -5,12 +5,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use crate::Result;
+
 /// Regular expression to match Markdown links of the form `[text](link)`.
 static LINK_REGEX: &str = r"\[([^\]]*)\]\(([^)]+)\)";
 
 /// Find all references to a given file within Markdown files in the specified root directory.
 /// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
-pub fn find_references<P, B>(path: P, root_dir: B) -> Result<Vec<Reference>, std::io::Error>
+pub fn find_references<P, B>(path: P, root_dir: B) -> Result<Vec<Reference>>
 where
     P: AsRef<Path>,
     B: AsRef<Path>,
@@ -32,7 +34,7 @@ where
 }
 
 /// Process a single Markdown file to find any file links.
-pub fn find_links<P: AsRef<Path>>(filepath: P) -> Result<Vec<Reference>, std::io::Error> {
+pub fn find_links<P: AsRef<Path>>(filepath: P) -> Result<Vec<Reference>> {
     let filepath = filepath.as_ref();
 
     // Only markdown files are processed.

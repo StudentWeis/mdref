@@ -1,4 +1,5 @@
 use clap::Subcommand;
+use mdref::Result;
 
 mod find;
 mod mv;
@@ -36,16 +37,10 @@ pub enum Commands {
     },
 }
 
-pub fn handle_command(command: Commands) {
+pub fn handle_command(command: Commands) -> Result<()> {
     match command {
-        Commands::Find { filepath, root } => {
-            find::run(filepath, root);
-        }
-        Commands::Rename { old, new, root } => {
-            rename::run(old, new, root);
-        }
-        Commands::Mv { source, dest, root } => {
-            mv::run(source, dest, root);
-        }
+        Commands::Find { filepath, root } => find::run(filepath, root),
+        Commands::Rename { old, new, root } => rename::run(old, new, root),
+        Commands::Mv { source, dest, root } => mv::run(source, dest, root),
     }
 }

@@ -1,6 +1,6 @@
-use mdref::{find_links, find_references};
+use mdref::{find_links, find_references, Result};
 
-pub fn run(file_path: String, root_dir: Option<String>) {
+pub fn run(file_path: String, root_dir: Option<String>) -> Result<()> {
     let root_path = root_dir.unwrap_or_else(|| ".".to_string());
 
     // Find references to the specified file.
@@ -17,6 +17,7 @@ pub fn run(file_path: String, root_dir: Option<String>) {
         }
         Err(e) => {
             eprintln!("Error finding references for {file_path}: {}", e);
+            return Err(e);
         }
     }
 
@@ -34,6 +35,9 @@ pub fn run(file_path: String, root_dir: Option<String>) {
         }
         Err(e) => {
             eprintln!("Error finding links in {file_path}: {}", e);
+            return Err(e);
         }
     }
+
+    Ok(())
 }
