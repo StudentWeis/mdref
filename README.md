@@ -62,7 +62,6 @@ Links in ./examples/main.md:
 - [ ] Preview mode of mv command.
 - [ ] More tests.
 - [ ] More documentations.
-- [ ] Error handling.
 - [ ] Cargo-dist oranda homepage.
 - [ ] VSCode extension.
 
