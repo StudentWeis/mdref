@@ -1,11 +1,10 @@
 use rayon::prelude::*;
 use regex::Regex;
-use std::fmt::{self, Display, Formatter};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use crate::Result;
+use crate::{Reference, Result};
 
 /// Regular expression to match Markdown links of the form `[text](link)`.
 static LINK_REGEX: &str = r"\[([^\]]*)\]\(([^)]+)\)";
@@ -114,40 +113,5 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
             }
         }
         None
-    }
-}
-
-/// Struct to hold reference information
-#[derive(Debug)]
-pub struct Reference {
-    pub path: PathBuf,
-    pub line: usize,
-    pub column: usize,
-    pub link_text: String,
-}
-
-impl Reference {
-    /// Constructor for References
-    fn new(path: PathBuf, line: usize, column: usize, link_text: String) -> Self {
-        Self {
-            path,
-            line,
-            column,
-            link_text,
-        }
-    }
-}
-
-impl Display for Reference {
-    /// Format as "path:line:column - link_text"
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}:{}:{} - {}",
-            self.path.display(),
-            self.line,
-            self.column,
-            self.link_text
-        )
     }
 }
