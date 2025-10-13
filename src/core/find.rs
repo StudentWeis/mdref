@@ -77,41 +77,76 @@ fn process_md_file(
 /// Determine whether a markdown link (found in `file_path`) refers to `target_canonical`.
 ///
 /// - If `target_canonical` is `None`, this function returns `true` (used when simply collecting links).
-/// - If `Some(target)`, the link is considered a match only when:
-///   1. The file name component of the link equals the target's file name, and
-///   2. Resolving the link relative to `file_path` and canonicalizing it yields the same absolute path as `target`.
+/// - If `Some(target)`, the link is considered a match if:
+///   - For files: the file name matches and the resolved path equals the target.
+///   - For directories: the resolved path is inside the target directory.
 ///
-/// Returns `true` when both checks succeed; otherwise `false`.
+/// Returns `true` when the checks succeed; otherwise `false`.
 fn process_link(file_path: &Path, target_canonical: Option<&Path>, link: &str) -> bool {
-    if let Some(target) = target_canonical {
+    // If no target specified, accept all links (used for collecting all links)
+    let target = match target_canonical {
+        Some(t) => t,
+        None => return true,
+    };
+
+    // Early check: if target is a file, the link's filename must match
+    if target.is_file() {
         let link_path = Path::new(link);
-        // Check if filenames match
-        if link_path.file_name().unwrap() != target.file_name().unwrap() {
+        if link_path.file_name() != target.file_name() {
             return false;
         }
-        // Check if absolute paths match
-        if let Some(resolved_path) = resolve_link(file_path, link_path) {
-            matches!(resolved_path.canonicalize(), Ok(canonical) if canonical == *target)
-        } else {
-            false
-        }
+    }
+
+    // Resolve and canonicalize the link path
+    let canonical_link = match resolve_and_canonicalize_link(file_path, link) {
+        Some(path) => path,
+        None => return false,
+    };
+
+    // Match the link against the target
+    match_link_to_target(&canonical_link, target)
+}
+
+/// Resolve a link path and canonicalize it.
+///
+/// Returns `None` if the link cannot be resolved or canonicalized.
+fn resolve_and_canonicalize_link(base_file: &Path, link: &str) -> Option<PathBuf> {
+    let link_path = Path::new(link);
+    let resolved = resolve_link(base_file, link_path)?;
+    resolved.canonicalize().ok()
+}
+
+/// Check if a canonicalized link matches the target path.
+///
+/// For files: the canonical path must match (filename check already done earlier).
+/// For directories: the link must resolve to a path inside the target directory.
+fn match_link_to_target(canonical_link: &Path, target: &Path) -> bool {
+    if target.is_file() {
+        // Filename already checked, just compare canonical paths
+        canonical_link == target
+    } else if target.is_dir() {
+        canonical_link.starts_with(target)
     } else {
-        true
+        false
     }
 }
 
-/// Resolve a link relative to the base file path and root directory.
+/// Resolve a link relative to the base file path.
+///
+/// Handles both absolute and relative links.
+/// For relative links, resolves them relative to the base file's parent directory.
 fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
     if link_path.is_absolute() {
-        Some(link_path.to_path_buf())
+        return Some(link_path.to_path_buf());
+    }
+
+    // Resolve relative to the base file's directory
+    let parent = base_path.parent()?;
+    let resolved = parent.join(link_path);
+
+    if resolved.exists() {
+        Some(resolved)
     } else {
-        // Try relative to the file's directory first
-        if let Some(parent) = base_path.parent() {
-            let resolved = parent.join(link_path);
-            if resolved.exists() {
-                return Some(resolved);
-            }
-        }
         None
     }
 }
