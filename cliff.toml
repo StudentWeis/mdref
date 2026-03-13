@@ -2,7 +2,7 @@
 # see: https://git-cliff.org/docs/integration/github
 [remote.github]
 owner = "StudentWeis"
-repo = "ropy"
+repo = "mdref"
 
 [changelog]
 header = """

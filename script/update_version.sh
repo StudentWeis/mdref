@@ -19,13 +19,10 @@ fi
 echo "Updating version to: $NEW_VERSION ..."
 
 # Use perl for replacement because it is more reliable in handling multiline patterns and cross-platform (macOS/Linux) than sed
-# 1. Replace version under [package]
+# Replace version under [package]
 perl -i -0777 -pe "s/(\[package\]\n(?:.*\n)*?version\s*=\s*\").*?\"/\${1}$NEW_VERSION\"/m" "$CARGO_TOML"
 
-# 2. Replace version under [package.metadata.bundle]
-perl -i -0777 -pe "s/(\[package\.metadata\.bundle\]\n(?:.*\n)*?version\s*=\s*\").*?\"/\${1}$NEW_VERSION\"/m" "$CARGO_TOML"
-
-# 3. Update CHANGELOG.md using git cliff
+# Update CHANGELOG.md using git cliff
 git cliff --unreleased --tag $NEW_VERSION --prepend CHANGELOG.md
 
 dist plan
