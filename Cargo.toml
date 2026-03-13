@@ -11,7 +11,7 @@ license = "MIT"
 [dependencies]
 clap = { version = "4.5.48", features = ["derive"] }
 walkdir = "2.3"
-regex = "1.12.1"
+comrak = "0.36"
 rayon = "1.11.0"
 pathdiff = "0.2"
 thiserror = "2.0"

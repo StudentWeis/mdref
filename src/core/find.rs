@@ -1,13 +1,12 @@
+use comrak::Arena;
+use comrak::nodes::{AstNode, NodeValue};
+use comrak::parse_document;
 use rayon::prelude::*;
-use regex::Regex;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use crate::{Reference, Result};
-
-/// Regular expression to match Markdown links of the form `[text](link)`.
-static LINK_REGEX: &str = r"\[([^\]]*)\]\(([^)]+)\)";
 
 /// Find all references to a given file within Markdown files in the specified root directory.
 /// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
@@ -17,16 +16,15 @@ where
     B: AsRef<Path>,
 {
     let canonical_path = path.as_ref().canonicalize()?;
-    let link_regex = Regex::new(LINK_REGEX).unwrap();
     Ok(WalkDir::new(root_dir)
         .into_iter()
         .par_bridge()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
         .filter_map(move |entry| {
-            fs::read_to_string(entry.path()).ok().map(|content| {
-                process_md_file(&content, entry.path(), &link_regex, Some(&canonical_path))
-            })
+            fs::read_to_string(entry.path())
+                .ok()
+                .map(|content| process_md_file(&content, entry.path(), Some(&canonical_path)))
         })
         .flatten()
         .collect())
@@ -40,38 +38,68 @@ pub fn find_links<P: AsRef<Path>>(filepath: P) -> Result<Vec<Reference>> {
     if filepath.extension().and_then(|s| s.to_str()) != Some("md") {
         return Ok(Vec::new());
     }
-    let link_regex = Regex::new(LINK_REGEX).unwrap();
     let content = fs::read_to_string(filepath)?;
-    Ok(process_md_file(&content, filepath, &link_regex, None))
+    Ok(process_md_file(&content, filepath, None))
 }
 
 /// Process a single Markdown file's content to find links referencing the target file.
 fn process_md_file(
     content: &str,
     file_path: &Path,
-    link_regex: &Regex,
     target_canonical: Option<&Path>,
 ) -> Vec<Reference> {
+    let arena = Arena::new();
+    let root = parse_document(&arena, content, &comrak::Options::default());
+
     let mut results = Vec::new();
-    for (line_num, line) in content.lines().enumerate() {
-        for cap in link_regex.captures_iter(line) {
-            if process_link(file_path, target_canonical, &cap[2]) {
-                let start_byte = cap.get(0).unwrap().start();
-                let column = line
-                    .char_indices()
-                    .position(|(byte_idx, _)| byte_idx >= start_byte)
-                    .unwrap_or(line.chars().count())
-                    + 1;
+    collect_links(root, file_path, target_canonical, &mut results);
+    results
+}
+
+/// Recursively collect links from the AST.
+fn collect_links<'a>(
+    node: &'a AstNode<'a>,
+    file_path: &Path,
+    target_canonical: Option<&Path>,
+    results: &mut Vec<Reference>,
+) {
+    let data = node.data.borrow();
+
+    match &data.value {
+        NodeValue::Link(link) => {
+            let url = &link.url;
+            if process_link(file_path, target_canonical, url) {
+                // Get line and column from sourcepos
+                let line = data.sourcepos.start.line;
+                let column = data.sourcepos.start.column;
                 results.push(Reference::new(
                     file_path.to_path_buf(),
-                    line_num + 1,
+                    line,
                     column,
-                    cap[2].to_string(),
+                    url.clone(),
                 ));
             }
         }
+        NodeValue::Image(image) => {
+            let url = &image.url;
+            if process_link(file_path, target_canonical, url) {
+                // Get line and column from sourcepos
+                let line = data.sourcepos.start.line;
+                let column = data.sourcepos.start.column;
+                results.push(Reference::new(
+                    file_path.to_path_buf(),
+                    line,
+                    column,
+                    url.clone(),
+                ));
+            }
+        }
+        _ => {}
     }
-    results
+
+    for child in node.children() {
+        collect_links(child, file_path, target_canonical, results);
+    }
 }
 
 /// Determine whether a markdown link (found in `file_path`) refers to `target_canonical`.
