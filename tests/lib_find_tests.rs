@@ -1,4 +1,4 @@
-use mdref::{find_links, find_references, Reference};
+use mdref::{Reference, find_links, find_references};
 use std::path::Path;
 
 // ============= find_links tests =============
@@ -36,7 +36,7 @@ fn test_find_links_count() {
 fn test_find_links_content_verification() {
     let path = Path::new("examples/main.md");
     let result = find_links(path).unwrap();
-    
+
     // Verify the found links
     let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
     assert!(link_texts.contains(&"main.md"));
@@ -48,7 +48,7 @@ fn test_find_links_content_verification() {
 fn test_find_links_line_numbers() {
     let path = Path::new("examples/main.md");
     let result = find_links(path).unwrap();
-    
+
     // Verify that line numbers are correct (greater than 0)
     for reference in result {
         assert!(reference.line > 0);
@@ -104,10 +104,13 @@ fn test_find_references_empty_directory() {
 fn test_find_references_returns_correct_paths() {
     let path = Path::new("examples/main.md");
     let result = find_references(path, path.parent().unwrap()).unwrap();
-    
+
     // Verify that the returned paths are all markdown files
     for reference in result {
-        assert_eq!(reference.path.extension().and_then(|s| s.to_str()), Some("md"));
+        assert_eq!(
+            reference.path.extension().and_then(|s| s.to_str()),
+            Some("md")
+        );
     }
 }
 
@@ -119,9 +122,9 @@ fn test_reference_creation() {
         std::path::PathBuf::from("test.md"),
         10,
         5,
-        "link.md".to_string()
+        "link.md".to_string(),
     );
-    
+
     assert_eq!(reference.line, 10);
     assert_eq!(reference.column, 5);
     assert_eq!(reference.link_text, "link.md");
@@ -133,9 +136,9 @@ fn test_reference_display() {
         std::path::PathBuf::from("test.md"),
         10,
         5,
-        "link.md".to_string()
+        "link.md".to_string(),
     );
-    
+
     let display_str = format!("{}", reference);
     assert!(display_str.contains("test.md"));
     assert!(display_str.contains("10"));
@@ -150,13 +153,13 @@ fn test_find_links_empty_markdown_file() {
     // Create a temporary empty file for testing
     use std::fs;
     use std::io::Write;
-    
+
     let temp_file = "test_empty.md";
     fs::File::create(temp_file).unwrap().write_all(b"").unwrap();
-    
+
     let result = find_links(Path::new(temp_file)).unwrap();
     assert_eq!(result.len(), 0);
-    
+
     // Cleanup
     fs::remove_file(temp_file).ok();
 }
