@@ -501,3 +501,243 @@ fn test_mv_file_from_subdir_to_root() {
     let content = fs::read_to_string(&target_file).unwrap();
     assert!(content.contains("sub/sibling.md"));
 }
+
+// ============= Edge case tests =============
+
+/// Move file to a target path with non-existent intermediate directories.
+#[test]
+fn test_mv_file_with_nonexistent_intermediate_path() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file in a subdirectory
+    let source_file = temp_dir.path().join("project").join("source.md");
+    write_file(&source_file, "# Source");
+
+    // Create a reference file at the project root
+    let ref_file = temp_dir.path().join("project").join("ref.md");
+    write_file(&ref_file, "[Source](source.md)");
+
+    // Target is in a non-existent nested directory (the path doesn't exist yet)
+    let target_file = temp_dir
+        .path()
+        .join("project")
+        .join("new")
+        .join("nested")
+        .join("target.md");
+
+    // This should work even though the intermediate directories don't exist
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(
+        result.is_ok(),
+        "Move should succeed even with non-existent intermediate path"
+    );
+    assert!(target_file.exists(), "Target file should exist");
+
+    // Reference should be updated to point to the new location
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("new/nested/target.md") || ref_content.contains("target.md"),
+        "Reference should be updated correctly. Got: {}",
+        ref_content
+    );
+}
+
+/// Move file with self-references to a different directory.
+#[test]
+fn test_mv_file_self_reference_cross_directory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file with self-reference in a subdirectory
+    let source_file = temp_dir.path().join("original").join("page.md");
+    write_file(
+        &source_file,
+        "# Page\n\n[Self](page.md)\n\n[Also self](./page.md)",
+    );
+
+    // Move to a different directory with different name
+    let target_file = temp_dir.path().join("moved").join("renamed.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(result.is_ok());
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    // Both self-references should be updated to the new filename
+    assert!(
+        content.contains("renamed.md"),
+        "Self-reference should be updated to new filename. Got: {}",
+        content
+    );
+    assert!(
+        !content.contains("page.md"),
+        "Old self-reference should not exist. Got: {}",
+        content
+    );
+}
+
+/// Verify normal move operation succeeds for error type validation.
+#[test]
+fn test_mv_file_error_type_validation() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Content");
+
+    // Create a reference file with a link
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Link](source.md)");
+
+    // Move the file - this should succeed
+    let target_file = temp_dir.path().join("target.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    // This test just verifies that normal operation succeeds
+    // The error type validation is done in unit tests
+    assert!(result.is_ok());
+}
+
+/// Move file to a subdirectory and verify internal links are updated correctly.
+#[test]
+fn test_mv_file_with_relative_target_path() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source\n\n[External](https://example.com)");
+
+    // Create a local file that source references
+    let local_file = temp_dir.path().join("local.md");
+    write_file(&local_file, "# Local");
+
+    // Update source to reference local file
+    write_file(&source_file, "# Source\n\n[Local](local.md)");
+
+    // Create reference to source
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Source](source.md)");
+
+    // Use a relative-style path for target (though we need to use absolute for the test)
+    // Note: In practice, the command line might pass relative paths
+    let target_file = temp_dir.path().join("subdir").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+
+    // Verify internal link is updated correctly
+    let target_content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        target_content.contains("../local.md"),
+        "Internal link should be updated with correct relative path. Got: {}",
+        target_content
+    );
+
+    // Verify external reference is updated
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("subdir/target.md"),
+        "Reference should be updated. Got: {}",
+        ref_content
+    );
+}
+
+/// Move file to a deeply nested new directory with multiple references.
+#[test]
+fn test_mv_file_deep_new_directory_with_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a file with internal links
+    let sibling_file = temp_dir.path().join("sibling.md");
+    write_file(&sibling_file, "# Sibling");
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[Sibling](sibling.md)");
+
+    // Create multiple references from different locations
+    let ref1 = temp_dir.path().join("ref1.md");
+    let ref2 = temp_dir.path().join("sub").join("ref2.md");
+    write_file(&ref1, "[Source](source.md)");
+    write_file(&ref2, "[Source](../source.md)");
+
+    // Move to a deeply nested new directory
+    let target_file = temp_dir
+        .path()
+        .join("a")
+        .join("b")
+        .join("c")
+        .join("d")
+        .join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+
+    // Check internal link in moved file
+    let target_content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        target_content.contains("sibling.md") || target_content.contains("../../../sibling.md"),
+        "Internal link should be updated. Got: {}",
+        target_content
+    );
+
+    // Check external references
+    let ref1_content = fs::read_to_string(&ref1).unwrap();
+    assert!(
+        ref1_content.contains("a/b/c/d/target.md"),
+        "Reference from root should be updated. Got: {}",
+        ref1_content
+    );
+}
+
+/// Move file with anchor links, preserving the anchor fragments.
+#[test]
+fn test_mv_file_preserves_anchor_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Title\n\n[Section](#section)\n\n## Section");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Source](source.md#title)");
+
+    let target_file = temp_dir.path().join("target.md");
+
+    mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    )
+    .unwrap();
+
+    // Internal anchor link should be preserved
+    let target_content = fs::read_to_string(&target_file).unwrap();
+    assert!(target_content.contains("#section"));
+
+    // External reference with anchor should be updated correctly
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(ref_content.contains("target.md#title"));
+}

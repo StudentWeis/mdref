@@ -42,9 +42,19 @@ where
     let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
 
     for reference in &references {
+        // Extract the anchor from the link text (if any) to preserve it
+        let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
+
         let new_link_path = relative_path(&reference.path, new_file_path)?;
+
+        // Reconstruct the new pattern with anchor preserved
+        let new_link_with_anchor = match anchor {
+            Some(a) => format!("{}#{}", new_link_path.display(), a),
+            None => new_link_path.display().to_string(),
+        };
+
         let old_pattern = format!("]({})", reference.link_text);
-        let new_pattern = format!("]({})", new_link_path.display());
+        let new_pattern = format!("]({})", new_link_with_anchor);
         replacements_by_file
             .entry(reference.path.clone())
             .or_default()
@@ -81,6 +91,23 @@ where
 /// Check whether a link text represents an external URL (e.g. https://, http://, ftp://).
 fn is_external_url(link: &str) -> bool {
     link.contains("://")
+}
+
+/// Split a link into the path part and the anchor (fragment) part.
+/// Returns (path, Some(anchor)) if there's an anchor, or (path, None) if not.
+/// Examples:
+///   "file.md#section" -> ("file.md", Some("section"))
+///   "file.md" -> ("file.md", None)
+///   "#section" -> ("", Some("section"))  (pure anchor link)
+fn split_link_and_anchor(link: &str) -> (&str, Option<&str>) {
+    match link.find('#') {
+        Some(pos) => {
+            let (path, anchor) = link.split_at(pos);
+            // Remove the '#' prefix from anchor
+            (path, Some(&anchor[1..]))
+        }
+        None => (link, None),
+    }
 }
 
 /// Build a LinkReplacement for an internal link in the moved file.

@@ -102,6 +102,18 @@ fn collect_links<'a>(
     }
 }
 
+/// Strip the anchor (fragment) from a link URL.
+/// For example, "file.md#section" becomes "file.md", and "#section" returns None.
+fn strip_anchor(link: &str) -> Option<&str> {
+    // Handle pure anchor links (e.g., "#section") - these are internal to the file
+    if link.starts_with('#') {
+        return None;
+    }
+
+    // Split on '#' and take the part before it
+    link.split('#').next()
+}
+
 /// Determine whether a markdown link (found in `file_path`) refers to `target_canonical`.
 ///
 /// - If `target_canonical` is `None`, this function returns `true` (used when simply collecting links).
@@ -111,6 +123,12 @@ fn collect_links<'a>(
 ///
 /// Returns `true` when the checks succeed; otherwise `false`.
 fn process_link(file_path: &Path, target_canonical: Option<&Path>, link: &str) -> bool {
+    // Strip anchor from link for file path resolution
+    let link_without_anchor = match strip_anchor(link) {
+        Some(l) => l,
+        None => return false, // Pure anchor links don't reference external files
+    };
+
     // If no target specified, accept all links (used for collecting all links)
     let target = match target_canonical {
         Some(t) => t,
@@ -119,14 +137,14 @@ fn process_link(file_path: &Path, target_canonical: Option<&Path>, link: &str) -
 
     // Early check: if target is a file, the link's filename must match
     if target.is_file() {
-        let link_path = Path::new(link);
+        let link_path = Path::new(link_without_anchor);
         if link_path.file_name() != target.file_name() {
             return false;
         }
     }
 
     // Resolve and canonicalize the link path
-    let canonical_link = match resolve_and_canonicalize_link(file_path, link) {
+    let canonical_link = match resolve_and_canonicalize_link(file_path, link_without_anchor) {
         Some(path) => path,
         None => return false,
     };
