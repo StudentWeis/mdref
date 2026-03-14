@@ -410,15 +410,21 @@ fn test_mv_file_preserves_external_urls() {
     create_test_file(&other_file, "# Local");
 
     let source_file = format!("{}/mixed.md", test_dir);
-    // Only local links — external URLs cause canonicalize errors in update_link,
-    // which is a known limitation of the current implementation.
-    create_test_file(&source_file, "[Local1](local.md)\n[Local2](local.md)");
+    // File contains both external URLs and local links.
+    // mv_file should skip external URLs and only update local links.
+    create_test_file(
+        &source_file,
+        "[Google](https://google.com)\n\n[Local](local.md)\n\n[GitHub](https://github.com)",
+    );
 
     let target_file = format!("{}/sub/mixed.md", test_dir);
     mv_file(&source_file, &target_file, &test_dir).unwrap();
 
     let content = fs::read_to_string(&target_file).unwrap();
-    // Local links should be updated to relative paths
+    // External URLs should remain unchanged
+    assert!(content.contains("https://google.com"));
+    assert!(content.contains("https://github.com"));
+    // Local link should be updated
     assert!(content.contains("../local.md"));
 
     cleanup_test_env(&test_dir);

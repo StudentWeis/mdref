@@ -45,8 +45,19 @@ where
     Ok(())
 }
 
+/// Check whether a link text represents an external URL (e.g. https://, http://, ftp://).
+fn is_external_url(link: &str) -> bool {
+    link.contains("://")
+}
+
 /// Update a link within a Markdown file to point to the new file location.
 fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) -> Result<()> {
+    // External URLs (https://, http://, etc.) are not local file paths
+    // and should not be rewritten during a file move.
+    if is_external_url(&r.link_text) {
+        return Ok(());
+    }
+
     let current_link_absolute_path = raw_filepath
         .parent()
         .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?
@@ -332,6 +343,64 @@ mod tests {
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("sub/new_target.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    // ============= is_external_url tests =============
+
+    #[test]
+    fn test_is_external_url_https() {
+        assert!(is_external_url("https://google.com"));
+        assert!(is_external_url("https://github.com/user/repo"));
+    }
+
+    #[test]
+    fn test_is_external_url_http() {
+        assert!(is_external_url("http://example.com"));
+        assert!(is_external_url("http://localhost:8080/path"));
+    }
+
+    #[test]
+    fn test_is_external_url_other_protocols() {
+        assert!(is_external_url("ftp://files.example.com/doc.md"));
+        assert!(is_external_url("mailto://user@example.com"));
+    }
+
+    #[test]
+    fn test_is_external_url_local_paths() {
+        assert!(!is_external_url("local.md"));
+        assert!(!is_external_url("sub/dir/file.md"));
+        assert!(!is_external_url("../parent/file.md"));
+        assert!(!is_external_url("./relative.md"));
+        assert!(!is_external_url("image.png"));
+    }
+
+    // ============= update_link with external URL =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_update_link_skips_external_url() {
+        let dir = setup_test_dir("upd_link_ext");
+        let source = format!("{}/source.md", dir);
+        let target = format!("{}/target.md", dir);
+        write_file(&source, "[Google](https://google.com)");
+        write_file(&target, "[Google](https://google.com)");
+
+        let reference = Reference::new(
+            PathBuf::from(&target),
+            1,
+            1,
+            "https://google.com".to_string(),
+        );
+
+        // Should succeed without error — external URL is skipped
+        let result = update_link(&reference, Path::new(&source), Path::new(&target));
+        assert!(result.is_ok());
+
+        // Content should remain unchanged
+        let content = fs::read_to_string(&target).unwrap();
+        assert!(content.contains("https://google.com"));
 
         teardown_test_dir(&dir);
     }
