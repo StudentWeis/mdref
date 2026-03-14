@@ -117,3 +117,222 @@ fn relative_path(from: &Path, to: &Path) -> Result<PathBuf> {
     let from_canonical: PathBuf = from_parent.canonicalize()?;
     Ok(diff_paths(to_canonical, from_canonical).unwrap_or_default())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    #[allow(clippy::unwrap_used)]
+    fn setup_test_dir(name: &str) -> String {
+        let dir = format!("test_core_mv_{}", name);
+        if Path::new(&dir).exists() {
+            fs::remove_dir_all(&dir).ok();
+        }
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn teardown_test_dir(dir: &str) {
+        if Path::new(dir).exists() {
+            fs::remove_dir_all(dir).ok();
+        }
+    }
+
+    #[allow(clippy::unwrap_used)]
+    fn write_file(path: &str, content: &str) {
+        if let Some(parent) = Path::new(path).parent() {
+            fs::create_dir_all(parent).ok();
+        }
+        let mut file = fs::File::create(path).unwrap();
+        file.write_all(content.as_bytes()).unwrap();
+    }
+
+    // ============= relative_path tests =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_relative_path_same_directory() {
+        let dir = setup_test_dir("rel_same");
+        let from = format!("{}/from.md", dir);
+        let to = format!("{}/to.md", dir);
+        write_file(&from, "");
+        write_file(&to, "");
+
+        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        assert_eq!(result, PathBuf::from("to.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_relative_path_parent_directory() {
+        let dir = setup_test_dir("rel_parent");
+        let from = format!("{}/sub/from.md", dir);
+        let to = format!("{}/to.md", dir);
+        write_file(&from, "");
+        write_file(&to, "");
+
+        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        assert_eq!(result, PathBuf::from("../to.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_relative_path_child_directory() {
+        let dir = setup_test_dir("rel_child");
+        let from = format!("{}/from.md", dir);
+        let to = format!("{}/sub/to.md", dir);
+        write_file(&from, "");
+        write_file(&to, "");
+
+        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        assert_eq!(result, PathBuf::from("sub/to.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_relative_path_deep_cross_directory() {
+        let dir = setup_test_dir("rel_deep");
+        let from = format!("{}/a/b/from.md", dir);
+        let to = format!("{}/x/y/to.md", dir);
+        write_file(&from, "");
+        write_file(&to, "");
+
+        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        assert_eq!(result, PathBuf::from("../../x/y/to.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    fn test_relative_path_nonexistent_target() {
+        let dir = setup_test_dir("rel_nonexist");
+        let from = format!("{}/from.md", dir);
+        write_file(&from, "");
+
+        let result = relative_path(Path::new(&from), Path::new(&format!("{}/ghost.md", dir)));
+        assert!(result.is_err());
+
+        teardown_test_dir(&dir);
+    }
+
+    // ============= replace_link_in_file tests =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_replace_link_in_file_basic() {
+        let dir = setup_test_dir("replace_basic");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(&file_path, "[Link](old.md)");
+
+        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "old.md".to_string());
+
+        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("](new.md)"));
+        assert!(!content.contains("](old.md)"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_replace_link_in_file_preserves_other_content() {
+        let dir = setup_test_dir("replace_preserve");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(
+            &file_path,
+            "# Title\n\nSome text [Link](old.md) more text.\n\nAnother paragraph.",
+        );
+
+        let reference = Reference::new(PathBuf::from(&file_path), 3, 11, "old.md".to_string());
+
+        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("# Title"));
+        assert!(content.contains("Some text [Link](new.md) more text."));
+        assert!(content.contains("Another paragraph."));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_replace_link_in_file_line_out_of_range() {
+        let dir = setup_test_dir("replace_oor");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(&file_path, "Single line");
+
+        let reference = Reference::new(PathBuf::from(&file_path), 999, 1, "link.md".to_string());
+
+        let result = replace_link_in_file(&reference, PathBuf::from("new.md"));
+        assert!(result.is_err());
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_replace_link_in_file_with_subdirectory_path() {
+        let dir = setup_test_dir("replace_subdir");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(&file_path, "[Link](sub/old.md)");
+
+        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "sub/old.md".to_string());
+
+        replace_link_in_file(&reference, PathBuf::from("other/new.md")).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("](other/new.md)"));
+
+        teardown_test_dir(&dir);
+    }
+
+    // ============= update_reference tests =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_update_reference_same_directory() {
+        let dir = setup_test_dir("upd_ref_same");
+        let ref_file = format!("{}/ref.md", dir);
+        let new_target = format!("{}/new_target.md", dir);
+        write_file(&ref_file, "[Link](old_target.md)");
+        write_file(&new_target, "");
+
+        let reference = Reference::new(PathBuf::from(&ref_file), 1, 1, "old_target.md".to_string());
+
+        update_reference(&reference, Path::new(&new_target)).unwrap();
+
+        let content = fs::read_to_string(&ref_file).unwrap();
+        assert!(content.contains("new_target.md"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_update_reference_cross_directory() {
+        let dir = setup_test_dir("upd_ref_cross");
+        let ref_file = format!("{}/ref.md", dir);
+        let new_target = format!("{}/sub/new_target.md", dir);
+        write_file(&ref_file, "[Link](old.md)");
+        write_file(&new_target, "");
+
+        let reference = Reference::new(PathBuf::from(&ref_file), 1, 1, "old.md".to_string());
+
+        update_reference(&reference, Path::new(&new_target)).unwrap();
+
+        let content = fs::read_to_string(&ref_file).unwrap();
+        assert!(content.contains("sub/new_target.md"));
+
+        teardown_test_dir(&dir);
+    }
+}

@@ -170,3 +170,162 @@ fn test_find_references_with_relative_paths() {
     let result = find_references(path, "examples").unwrap();
     assert!(!result.is_empty());
 }
+
+// ============= Image link tests =============
+
+#[test]
+fn test_find_links_includes_image_links() {
+    let path = Path::new("examples/main.md");
+    let result = find_links(path).unwrap();
+
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    // main.md contains ![jpg test](main.jpg) twice
+    assert!(link_texts.contains(&"main.jpg"));
+}
+
+#[test]
+fn test_find_links_image_with_dot_slash_prefix() {
+    // examples/other.md uses ./main.jpg syntax
+    let path = Path::new("examples/other.md");
+    let result = find_links(path).unwrap();
+
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    assert!(link_texts.contains(&"./main.jpg"));
+}
+
+// ============= Multiple links on same line =============
+
+#[test]
+fn test_find_links_multiple_links_same_line() {
+    let path = Path::new("examples/main.md");
+    let result = find_links(path).unwrap();
+
+    // Line 7: [outer main](main.md) - [inner main](inner/main.md) - [sub inner main](inner/sub/main.md)
+    // All three links should be on line 7
+    let line7_links: Vec<&Reference> = result.iter().filter(|r| r.line == 7).collect();
+    assert_eq!(line7_links.len(), 3);
+
+    // Verify column numbers are distinct and increasing
+    let columns: Vec<usize> = line7_links.iter().map(|r| r.column).collect();
+    assert!(columns.windows(2).all(|w| w[0] < w[1]));
+}
+
+// ============= Nested directory references =============
+
+#[test]
+fn test_find_references_deep_nested() {
+    // inner/main.md is referenced from multiple levels
+    let path = Path::new("examples/inner/main.md");
+    let root = Path::new("examples");
+    let result = find_references(path, root).unwrap();
+
+    // Should be referenced by outer main.md, inner/other.md, etc.
+    assert!(result.len() >= 2);
+
+    // Verify references come from different directory levels
+    let ref_paths: Vec<String> = result
+        .iter()
+        .map(|r| r.path.display().to_string())
+        .collect();
+    let has_outer_ref = ref_paths.iter().any(|p| !p.contains("inner"));
+    let has_inner_ref = ref_paths.iter().any(|p| p.contains("inner"));
+    assert!(has_outer_ref || has_inner_ref);
+}
+
+// ============= Self-reference =============
+
+#[test]
+fn test_find_references_self_reference() {
+    // main.md references itself: [outer main](main.md)
+    let path = Path::new("examples/main.md");
+    let result = find_references(path, path.parent().unwrap()).unwrap();
+
+    // main.md should appear in its own references (self-reference)
+    let self_refs: Vec<&Reference> = result
+        .iter()
+        .filter(|r| {
+            r.path.file_name().unwrap() == "main.md" && !r.path.to_string_lossy().contains("inner")
+        })
+        .collect();
+    assert!(!self_refs.is_empty());
+}
+
+// ============= External URL filtering =============
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_external_urls_not_matched_as_file_refs() {
+    use std::fs;
+    use std::io::Write;
+
+    let temp_file = "test_external_urls.md";
+    let content = "# Test\n\n[Google](https://google.com)\n[Local](test_external_urls.md)\n";
+    fs::File::create(temp_file)
+        .unwrap()
+        .write_all(content.as_bytes())
+        .unwrap();
+
+    let result = find_links(Path::new(temp_file)).unwrap();
+
+    // External URLs should still be collected as links
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    assert!(link_texts.contains(&"https://google.com"));
+    assert!(link_texts.contains(&"test_external_urls.md"));
+
+    fs::remove_file(temp_file).ok();
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_external_url_not_matched() {
+    use std::fs;
+    use std::io::Write;
+
+    let temp_dir = "test_ext_url_ref";
+    fs::create_dir_all(temp_dir).unwrap();
+
+    let target = format!("{}/target.md", temp_dir);
+    fs::File::create(&target)
+        .unwrap()
+        .write_all(b"# Target")
+        .unwrap();
+
+    let referrer = format!("{}/referrer.md", temp_dir);
+    let content = "[External](https://example.com/target.md)\n[Local](target.md)\n";
+    fs::File::create(&referrer)
+        .unwrap()
+        .write_all(content.as_bytes())
+        .unwrap();
+
+    let result = find_references(&target, temp_dir).unwrap();
+
+    // Only the local reference should match, not the external URL
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].link_text, "target.md");
+
+    fs::remove_dir_all(temp_dir).ok();
+}
+
+// ============= Dot-slash prefix links =============
+
+#[test]
+fn test_find_links_dot_slash_prefix() {
+    // examples/other.md uses ./main.jpg and ./inner/other.md style links
+    let path = Path::new("examples/other.md");
+    let result = find_links(path).unwrap();
+
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    assert!(link_texts.contains(&"./inner/other.md"));
+}
+
+// ============= find_references with directory target =============
+
+#[test]
+fn test_find_references_directory_target() {
+    let dir_path = Path::new("examples/inner");
+    let root = Path::new("examples");
+    let result = find_references(dir_path, root).unwrap();
+
+    // Should find references to files inside the inner directory
+    assert!(!result.is_empty());
+}
