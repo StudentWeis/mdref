@@ -67,7 +67,8 @@ fn generate_dir(
         });
 
         // Add to root links - extract relative path from the base_path
-        let rel_path = file_path.strip_prefix(base_path)
+        let rel_path = file_path
+            .strip_prefix(base_path)
             .and_then(|p| p.strip_prefix('/'))
             .unwrap_or(&file_path);
         root_links.push((
@@ -97,7 +98,12 @@ pub fn generate() -> std::io::Result<(TempDir, std::path::PathBuf)> {
     let mut root_links = Vec::new();
 
     // Generate directory structure recursively
-    generate_dir(root_path.to_str().unwrap(), 0, &mut files_to_create, &mut root_links);
+    generate_dir(
+        root_path.to_str().unwrap(),
+        0,
+        &mut files_to_create,
+        &mut root_links,
+    );
 
     // Add root file
     let root_md_path = root_path.join("root.md");

@@ -88,6 +88,9 @@ fn update_reference(r: &Reference, new_filepath: &Path) -> Result<()> {
 }
 
 /// Replace the old link in the specified file with the new link path.
+/// Uses precise position information from comrak (via Reference.column) to ensure
+/// only the specific link at the given position is replaced, avoiding incorrect
+/// replacements when multiple identical links exist on the same line.
 fn replace_link_in_file(r: &Reference, new_link_path: PathBuf) -> Result<()> {
     let content = fs::read_to_string(&r.path)?;
     let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
@@ -101,17 +104,39 @@ fn replace_link_in_file(r: &Reference, new_link_path: PathBuf) -> Result<()> {
     let line = &lines[r.line - 1];
     let old_pattern = format!("]({})", r.link_text);
     let new_pattern = format!("]({})", new_link_path.display());
-    if line.contains(&old_pattern) {
-        let new_line = line.replace(&old_pattern, &new_pattern);
-        lines[r.line - 1] = new_line;
-        let new_content = lines.join("\n");
-        if let Err(e) = fs::write(&r.path, new_content) {
-            eprintln!("Error writing file {}: {}", r.path.display(), e);
-            return Err(e.into());
+
+    // Use column from Reference (1-based, points to '[' of the link) to find exact position
+    // The '](link)' pattern starts after the link label, so we need to find it relative to column
+    let col = r.column.saturating_sub(1); // Convert to 0-based index
+
+    // Search for the old_pattern starting from the column position
+    // This ensures we replace the correct occurrence when multiple identical links exist
+    if let Some(pos) = line[col..].find(&old_pattern) {
+        let actual_pos = col + pos;
+        let end_pos = actual_pos + old_pattern.len();
+
+        // Verify the pattern matches exactly at this position
+        if &line[actual_pos..end_pos] == old_pattern {
+            // Build new line with only this specific occurrence replaced
+            let new_line = format!("{}{}{}", &line[..actual_pos], new_pattern, &line[end_pos..]);
+            lines[r.line - 1] = new_line;
+
+            let new_content = lines.join("\n");
+            if let Err(e) = fs::write(&r.path, new_content) {
+                eprintln!("Error writing file {}: {}", r.path.display(), e);
+                return Err(e.into());
+            }
+        } else {
+            eprintln!(
+                "Pattern mismatch at expected position in line {} of file {}",
+                r.line,
+                r.path.display()
+            );
         }
     } else {
         eprintln!(
-            "Could not find link in line {} of file {}",
+            "Could not find link '{}' in line {} of file {}",
+            old_pattern,
             r.line,
             r.path.display()
         );
@@ -303,6 +328,49 @@ mod tests {
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](other/new.md)"));
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_replace_link_in_file_multiple_links_same_line_substring_issue() {
+        // This test demonstrates a potential bug where replace_link_in_file may
+        // incorrectly replace links when the same link appears multiple times on the same line.
+        //
+        // The issue: old_pattern = "](link_text)" uses simple string replace,
+        // which replaces ALL occurrences. If the same link text appears multiple times
+        // on the same line, all will be replaced even if we only want to replace one.
+        //
+        // Real bug scenario: [A](doc.md) and [B](doc.md)
+        // Both links point to the same file. If we only want to update the reference
+        // for [A] (e.g., because [A] is at column 1), [B] will also be incorrectly updated.
+        let dir = setup_test_dir("replace_substring_issue");
+        let file_path = format!("{}/doc.md", dir);
+        // Two links with the same path on the same line
+        // First link:  [A](doc.md) at column 1 — the one we want to replace
+        // Second link: [B](doc.md) at column 16 — should NOT be touched
+        write_file(&file_path, "[A](doc.md) and [B](doc.md)");
+
+        // We want to replace only [A](doc.md) → [A](new.md)
+        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "doc.md".to_string());
+
+        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        // The first link should be replaced
+        assert!(
+            content.contains("[A](new.md)"),
+            "Expected [A](new.md) in content: {}",
+            content
+        );
+        // The second link must NOT be modified — this assertion will fail due to the bug,
+        // demonstrating that String::replace replaced all occurrences.
+        assert!(
+            content.contains("[B](doc.md)"),
+            "Bug: [B](doc.md) was incorrectly modified. Content: {}",
+            content
+        );
 
         teardown_test_dir(&dir);
     }
