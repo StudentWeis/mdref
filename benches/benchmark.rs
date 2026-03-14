@@ -1,22 +1,19 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use mdref::find_references;
 use std::hint::black_box;
-use std::path::Path;
 
 mod mock_generator;
 
 fn benchmark_find_references(c: &mut Criterion) {
-    // Generate mock data before running benchmarks
-    mock_generator::generate().expect("Failed to generate mock data");
+    // Generate mock data in a temporary directory before running benchmarks
+    let (_temp_dir, root_path) = mock_generator::generate().expect("Failed to generate mock data");
+    let filepath = root_path.join("root.md");
 
-    let filepath = Path::new("mock_data/root.md");
-    let root = Path::new("mock_data");
-
-    println!("Setting up benchmark");
+    println!("Setting up benchmark in temp dir: {:?}", root_path);
 
     c.bench_function("find_references", |b| {
         b.iter(|| {
-            let result = find_references(black_box(filepath), black_box(root));
+            let result = find_references(black_box(&filepath), black_box(&root_path));
             match result {
                 Ok(refs) => {
                     let _ = black_box(refs);

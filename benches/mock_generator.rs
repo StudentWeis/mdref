@@ -1,11 +1,12 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use tempfile::TempDir;
 
 const MOCK_TEXT: &str = "Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.\n";
 
 /// Controls the depth of directory nesting.
-/// For example, with `DIR_DEPTH = 2` files will be placed under `mock_data/dirX/sub0/.../fileY.md`.
+/// For example, with `DIR_DEPTH = 2` files will be placed under `dirX/sub0/.../fileY.md`.
 const DIR_DEPTH: usize = 3;
 
 /// Controls the number of subdirectories per directory.
@@ -21,7 +22,7 @@ struct MockFile {
 }
 
 fn up_prefix(depth: usize) -> String {
-    // Returns a relative prefix to go up from a nested directory to the root of mock_data
+    // Returns a relative prefix to go up from a nested directory to the root
     match depth {
         0 => String::new(),
         1 => "../".to_string(),
@@ -65,8 +66,10 @@ fn generate_dir(
             links,
         });
 
-        // Add to root links
-        let rel_path = &file_path["mock_data/".len()..];
+        // Add to root links - extract relative path from the base_path
+        let rel_path = file_path.strip_prefix(base_path)
+            .and_then(|p| p.strip_prefix('/'))
+            .unwrap_or(&file_path);
         root_links.push((
             format!("file_{}_{}", current_depth, j),
             format!("./{}", rel_path),
@@ -84,25 +87,27 @@ fn generate_dir(
     }
 }
 
-pub fn generate() -> std::io::Result<()> {
+/// Generates mock markdown files in a temporary directory.
+/// Returns the TempDir handle (to keep the directory alive) and the root path.
+pub fn generate() -> std::io::Result<(TempDir, std::path::PathBuf)> {
+    let temp_dir = TempDir::new()?;
+    let root_path = temp_dir.path().to_path_buf();
+
     let mut files_to_create = Vec::new();
     let mut root_links = Vec::new();
 
     // Generate directory structure recursively
-    generate_dir("mock_data", 0, &mut files_to_create, &mut root_links);
+    generate_dir(root_path.to_str().unwrap(), 0, &mut files_to_create, &mut root_links);
 
     // Add root file
+    let root_md_path = root_path.join("root.md");
     files_to_create.push(MockFile {
-        path: "mock_data/root.md".to_string(),
+        path: root_md_path.to_string_lossy().to_string(),
         content: vec!["# Root File\n\nThis is the root file.\n\n".to_string()],
         links: root_links,
     });
 
     // Create files
-    if Path::new("mock_data").exists() {
-        fs::remove_dir_all("mock_data")?;
-    }
-
     for mock_file in files_to_create {
         let path = Path::new(&mock_file.path);
         if let Some(parent) = path.parent() {
@@ -124,5 +129,5 @@ pub fn generate() -> std::io::Result<()> {
         }
     }
 
-    Ok(())
+    Ok((temp_dir, root_path))
 }

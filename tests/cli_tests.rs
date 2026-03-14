@@ -2,6 +2,7 @@ use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::process::Command;
+use tempfile::TempDir;
 
 /// Get the path to the compiled binary.
 /// Assumes `cargo build` has been run before tests.
@@ -17,24 +18,9 @@ fn binary_path() -> std::path::PathBuf {
 }
 
 #[allow(clippy::unwrap_used)]
-fn setup_test_dir(name: &str) -> String {
-    let dir = format!("test_cli_{}", name);
-    if Path::new(&dir).exists() {
-        fs::remove_dir_all(&dir).ok();
-    }
-    fs::create_dir_all(&dir).unwrap();
-    dir
-}
-
-fn teardown_test_dir(dir: &str) {
-    if Path::new(dir).exists() {
-        fs::remove_dir_all(dir).ok();
-    }
-}
-
-#[allow(clippy::unwrap_used)]
-fn write_file(path: &str, content: &str) {
-    if let Some(parent) = Path::new(path).parent() {
+fn write_file<P: AsRef<Path>>(path: P, content: &str) {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).ok();
     }
     let mut file = fs::File::create(path).unwrap();
@@ -89,20 +75,23 @@ fn test_cli_find_no_references() {
         return;
     }
 
-    let dir = setup_test_dir("find_no_refs");
-    let file = format!("{}/lonely.md", dir);
+    let temp_dir = TempDir::new().unwrap();
+    let file = temp_dir.path().join("lonely.md");
     write_file(&file, "# Lonely file");
 
     let output = Command::new(&binary)
-        .args(["find", &file, "--root", &dir])
+        .args([
+            "find",
+            file.to_str().unwrap(),
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("No references found"));
-
-    teardown_test_dir(&dir);
 }
 
 // ============= mv command tests =============
@@ -115,21 +104,25 @@ fn test_cli_mv_basic() {
         return;
     }
 
-    let dir = setup_test_dir("mv_basic");
-    let source = format!("{}/source.md", dir);
-    let target = format!("{}/target.md", dir);
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("source.md");
+    let target = temp_dir.path().join("target.md");
     write_file(&source, "# Source");
 
     let output = Command::new(&binary)
-        .args(["mv", &source, &target, "--root", &dir])
+        .args([
+            "mv",
+            source.to_str().unwrap(),
+            target.to_str().unwrap(),
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 
     assert!(output.status.success());
-    assert!(Path::new(&target).exists());
-    assert!(!Path::new(&source).exists());
-
-    teardown_test_dir(&dir);
+    assert!(target.exists());
+    assert!(!source.exists());
 }
 
 #[test]
@@ -140,14 +133,14 @@ fn test_cli_mv_nonexistent_source() {
         return;
     }
 
-    let dir = setup_test_dir("mv_nonexist");
+    let temp_dir = TempDir::new().unwrap();
     let output = Command::new(&binary)
         .args([
             "mv",
-            &format!("{}/ghost.md", dir),
-            &format!("{}/target.md", dir),
+            temp_dir.path().join("ghost.md").to_str().unwrap(),
+            temp_dir.path().join("target.md").to_str().unwrap(),
             "--root",
-            &dir,
+            temp_dir.path().to_str().unwrap(),
         ])
         .output()
         .unwrap();
@@ -155,8 +148,6 @@ fn test_cli_mv_nonexistent_source() {
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Error"));
-
-    teardown_test_dir(&dir);
 }
 
 // ============= rename command tests =============
@@ -169,20 +160,24 @@ fn test_cli_rename_basic() {
         return;
     }
 
-    let dir = setup_test_dir("rename_basic");
-    let source = format!("{}/old.md", dir);
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("old.md");
     write_file(&source, "# Old name");
 
     let output = Command::new(&binary)
-        .args(["rename", &source, "new.md", "--root", &dir])
+        .args([
+            "rename",
+            source.to_str().unwrap(),
+            "new.md",
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 
     assert!(output.status.success());
-    assert!(Path::new(&format!("{}/new.md", dir)).exists());
-    assert!(!Path::new(&source).exists());
-
-    teardown_test_dir(&dir);
+    assert!(temp_dir.path().join("new.md").exists());
+    assert!(!source.exists());
 }
 
 #[test]
@@ -193,21 +188,19 @@ fn test_cli_rename_nonexistent_source() {
         return;
     }
 
-    let dir = setup_test_dir("rename_nonexist");
+    let temp_dir = TempDir::new().unwrap();
     let output = Command::new(&binary)
         .args([
             "rename",
-            &format!("{}/ghost.md", dir),
+            temp_dir.path().join("ghost.md").to_str().unwrap(),
             "new.md",
             "--root",
-            &dir,
+            temp_dir.path().to_str().unwrap(),
         ])
         .output()
         .unwrap();
 
     assert!(!output.status.success());
-
-    teardown_test_dir(&dir);
 }
 
 // ============= version and help =============
@@ -268,15 +261,21 @@ fn test_cli_mv_updates_references_e2e() {
         return;
     }
 
-    let dir = setup_test_dir("mv_e2e");
-    let source = format!("{}/doc.md", dir);
-    let ref_file = format!("{}/index.md", dir);
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("doc.md");
+    let ref_file = temp_dir.path().join("index.md");
     write_file(&source, "# Document");
     write_file(&ref_file, "See [doc](doc.md) for details.");
 
-    let target = format!("{}/archive/doc.md", dir);
+    let target = temp_dir.path().join("archive").join("doc.md");
     let output = Command::new(&binary)
-        .args(["mv", &source, &target, "--root", &dir])
+        .args([
+            "mv",
+            source.to_str().unwrap(),
+            target.to_str().unwrap(),
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 
@@ -286,8 +285,6 @@ fn test_cli_mv_updates_references_e2e() {
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     assert!(ref_content.contains("archive/doc.md"));
     assert!(!ref_content.contains("](doc.md)"));
-
-    teardown_test_dir(&dir);
 }
 
 // ============= End-to-end: rename with reference update =============
@@ -300,14 +297,20 @@ fn test_cli_rename_updates_references_e2e() {
         return;
     }
 
-    let dir = setup_test_dir("rename_e2e");
-    let source = format!("{}/old_doc.md", dir);
-    let ref_file = format!("{}/index.md", dir);
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("old_doc.md");
+    let ref_file = temp_dir.path().join("index.md");
     write_file(&source, "# Old Document");
     write_file(&ref_file, "See [doc](old_doc.md) for info.");
 
     let output = Command::new(&binary)
-        .args(["rename", &source, "new_doc.md", "--root", &dir])
+        .args([
+            "rename",
+            source.to_str().unwrap(),
+            "new_doc.md",
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
         .output()
         .unwrap();
 
@@ -316,6 +319,4 @@ fn test_cli_rename_updates_references_e2e() {
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     assert!(ref_content.contains("new_doc.md"));
     assert!(!ref_content.contains("old_doc.md"));
-
-    teardown_test_dir(&dir);
 }

@@ -1,5 +1,18 @@
 use mdref::{Reference, find_links, find_references};
+use std::fs;
+use std::io::Write;
 use std::path::Path;
+use tempfile::TempDir;
+
+#[allow(clippy::unwrap_used)]
+fn write_file<P: AsRef<Path>>(path: P, content: &str) {
+    let path = path.as_ref();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).ok();
+    }
+    let mut file = fs::File::create(path).unwrap();
+    file.write_all(content.as_bytes()).unwrap();
+}
 
 // ============= find_links tests =============
 
@@ -151,17 +164,15 @@ fn test_reference_display() {
 #[test]
 fn test_find_links_empty_markdown_file() {
     // Create a temporary empty file for testing
-    use std::fs;
-    use std::io::Write;
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test_empty.md");
+    fs::File::create(&temp_file)
+        .unwrap()
+        .write_all(b"")
+        .unwrap();
 
-    let temp_file = "test_empty.md";
-    fs::File::create(temp_file).unwrap().write_all(b"").unwrap();
-
-    let result = find_links(Path::new(temp_file)).unwrap();
+    let result = find_links(&temp_file).unwrap();
     assert_eq!(result.len(), 0);
-
-    // Cleanup
-    fs::remove_file(temp_file).ok();
 }
 
 #[test]
@@ -255,55 +266,36 @@ fn test_find_references_self_reference() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_find_links_external_urls_not_matched_as_file_refs() {
-    use std::fs;
-    use std::io::Write;
-
-    let temp_file = "test_external_urls.md";
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test_external_urls.md");
     let content = "# Test\n\n[Google](https://google.com)\n[Local](test_external_urls.md)\n";
-    fs::File::create(temp_file)
-        .unwrap()
-        .write_all(content.as_bytes())
-        .unwrap();
+    write_file(&temp_file, content);
 
-    let result = find_links(Path::new(temp_file)).unwrap();
+    let result = find_links(&temp_file).unwrap();
 
     // External URLs should still be collected as links
     let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
     assert!(link_texts.contains(&"https://google.com"));
     assert!(link_texts.contains(&"test_external_urls.md"));
-
-    fs::remove_file(temp_file).ok();
 }
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_find_references_external_url_not_matched() {
-    use std::fs;
-    use std::io::Write;
+    let temp_dir = TempDir::new().unwrap();
 
-    let temp_dir = "test_ext_url_ref";
-    fs::create_dir_all(temp_dir).unwrap();
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
 
-    let target = format!("{}/target.md", temp_dir);
-    fs::File::create(&target)
-        .unwrap()
-        .write_all(b"# Target")
-        .unwrap();
-
-    let referrer = format!("{}/referrer.md", temp_dir);
+    let referrer = temp_dir.path().join("referrer.md");
     let content = "[External](https://example.com/target.md)\n[Local](target.md)\n";
-    fs::File::create(&referrer)
-        .unwrap()
-        .write_all(content.as_bytes())
-        .unwrap();
+    write_file(&referrer, content);
 
-    let result = find_references(&target, temp_dir).unwrap();
+    let result = find_references(&target, temp_dir.path()).unwrap();
 
     // Only the local reference should match, not the external URL
     assert_eq!(result.len(), 1);
     assert_eq!(result[0].link_text, "target.md");
-
-    fs::remove_dir_all(temp_dir).ok();
 }
 
 // ============= Dot-slash prefix links =============
