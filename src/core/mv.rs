@@ -1,8 +1,17 @@
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::{MdrefError, Reference, Result, find_links, find_references};
 use pathdiff::diff_paths;
+
+/// A pending replacement: which line/column to find the old pattern, and what to replace it with.
+struct LinkReplacement {
+    line: usize,
+    column: usize,
+    old_pattern: String,
+    new_pattern: String,
+}
 
 /// Move references from the old file path to the new file path within Markdown files in the specified root directory.
 /// This function finds all references to the old file and updates them to point to the new file.
@@ -29,14 +38,38 @@ where
     // We copy first to avoid data loss in case of errors during reference updates.
     fs::copy(raw_file_path, new_file_path)?;
 
-    // Update all references to point to the new file path.
-    for r in references {
-        update_reference(&r, new_file_path)?;
+    // Collect all reference replacements, grouped by file path.
+    let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
+
+    for reference in &references {
+        let new_link_path = relative_path(&reference.path, new_file_path)?;
+        let old_pattern = format!("]({})", reference.link_text);
+        let new_pattern = format!("]({})", new_link_path.display());
+        replacements_by_file
+            .entry(reference.path.clone())
+            .or_default()
+            .push(LinkReplacement {
+                line: reference.line,
+                column: reference.column,
+                old_pattern,
+                new_pattern,
+            });
     }
 
+    // Collect all link replacements for the moved file itself.
     let links = find_links(new_file_path)?;
-    for r in links {
-        update_link(&r, raw_file_path, new_file_path)?;
+    for link in &links {
+        if let Some(replacement) = build_link_replacement(link, raw_file_path, new_file_path)? {
+            replacements_by_file
+                .entry(link.path.clone())
+                .or_default()
+                .push(replacement);
+        }
+    }
+
+    // Apply all replacements, one file at a time.
+    for (file_path, replacements) in &replacements_by_file {
+        apply_replacements(file_path, replacements)?;
     }
 
     // Remove the original file after updating references.
@@ -50,12 +83,17 @@ fn is_external_url(link: &str) -> bool {
     link.contains("://")
 }
 
-/// Update a link within a Markdown file to point to the new file location.
-fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) -> Result<()> {
+/// Build a LinkReplacement for an internal link in the moved file.
+/// Returns `None` if the link is an external URL and should be skipped.
+fn build_link_replacement(
+    r: &Reference,
+    raw_filepath: &Path,
+    new_filepath: &Path,
+) -> Result<Option<LinkReplacement>> {
     // External URLs (https://, http://, etc.) are not local file paths
     // and should not be rewritten during a file move.
     if is_external_url(&r.link_text) {
-        return Ok(());
+        return Ok(None);
     }
 
     let current_link_absolute_path = raw_filepath
@@ -64,83 +102,89 @@ fn update_link(r: &Reference, raw_filepath: &Path, new_filepath: &Path) -> Resul
         .join(&r.link_text)
         .canonicalize()?;
     let new_file_absolute_path = new_filepath.canonicalize()?;
+    let raw_file_canonical = raw_filepath.canonicalize()?;
 
-    let new_link_path =
-        if current_link_absolute_path.eq(&raw_filepath.canonicalize().unwrap_or_default()) {
-            PathBuf::from(
-                new_file_absolute_path
-                    .file_name()
-                    .ok_or_else(|| MdrefError::Path("No file name".to_string()))?,
-            )
-        } else {
-            relative_path(&new_file_absolute_path, &current_link_absolute_path)?
-        };
-    replace_link_in_file(r, new_link_path)?;
-    Ok(())
-}
+    let new_link_path = if current_link_absolute_path == raw_file_canonical {
+        PathBuf::from(
+            new_file_absolute_path
+                .file_name()
+                .ok_or_else(|| MdrefError::Path("No file name".to_string()))?,
+        )
+    } else {
+        relative_path(&new_file_absolute_path, &current_link_absolute_path)?
+    };
 
-/// Update a reference within a Markdown file to point to the new file location.
-fn update_reference(r: &Reference, new_filepath: &Path) -> Result<()> {
-    let current_file_path = &r.path;
-    let new_link_path = relative_path(current_file_path, new_filepath)?;
-    replace_link_in_file(r, new_link_path)?;
-    Ok(())
-}
-
-/// Replace the old link in the specified file with the new link path.
-/// Uses precise position information from comrak (via Reference.column) to ensure
-/// only the specific link at the given position is replaced, avoiding incorrect
-/// replacements when multiple identical links exist on the same line.
-fn replace_link_in_file(r: &Reference, new_link_path: PathBuf) -> Result<()> {
-    let content = fs::read_to_string(&r.path)?;
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-    if r.line > lines.len() {
-        return Err(MdrefError::InvalidLine(format!(
-            "Line number {} out of range for file {}",
-            r.line,
-            r.path.display()
-        )));
-    }
-    let line = &lines[r.line - 1];
     let old_pattern = format!("]({})", r.link_text);
     let new_pattern = format!("]({})", new_link_path.display());
 
-    // Use column from Reference (1-based, points to '[' of the link) to find exact position
-    // The '](link)' pattern starts after the link label, so we need to find it relative to column
-    let col = r.column.saturating_sub(1); // Convert to 0-based index
+    Ok(Some(LinkReplacement {
+        line: r.line,
+        column: r.column,
+        old_pattern,
+        new_pattern,
+    }))
+}
 
-    // Search for the old_pattern starting from the column position
-    // This ensures we replace the correct occurrence when multiple identical links exist
-    if let Some(pos) = line[col..].find(&old_pattern) {
-        let actual_pos = col + pos;
-        let end_pos = actual_pos + old_pattern.len();
+/// Apply all pending replacements to a single file in one read-write cycle.
+/// Replacements are sorted in reverse order (by line desc, then column desc) so that
+/// earlier replacements do not shift the positions of later ones.
+fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Result<()> {
+    let content = fs::read_to_string(file_path)?;
+    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
 
-        // Verify the pattern matches exactly at this position
-        if &line[actual_pos..end_pos] == old_pattern {
-            // Build new line with only this specific occurrence replaced
-            let new_line = format!("{}{}{}", &line[..actual_pos], new_pattern, &line[end_pos..]);
-            lines[r.line - 1] = new_line;
+    // Sort replacements in reverse order (bottom-right to top-left) so that
+    // replacing one link does not invalidate the positions of subsequent ones.
+    let mut sorted_indices: Vec<usize> = (0..replacements.len()).collect();
+    sorted_indices.sort_by(|&a, &b| {
+        replacements[b]
+            .line
+            .cmp(&replacements[a].line)
+            .then_with(|| replacements[b].column.cmp(&replacements[a].column))
+    });
 
-            let new_content = lines.join("\n");
-            if let Err(e) = fs::write(&r.path, new_content) {
-                eprintln!("Error writing file {}: {}", r.path.display(), e);
-                return Err(e.into());
-            }
-        } else {
-            eprintln!(
-                "Pattern mismatch at expected position in line {} of file {}",
-                r.line,
-                r.path.display()
-            );
+    for &idx in &sorted_indices {
+        let replacement = &replacements[idx];
+
+        if replacement.line > lines.len() {
+            return Err(MdrefError::InvalidLine(format!(
+                "Line number {} out of range for file {}",
+                replacement.line,
+                file_path.display()
+            )));
         }
-    } else {
-        eprintln!(
-            "Could not find link '{}' in line {} of file {}",
-            old_pattern,
-            r.line,
-            r.path.display()
-        );
+
+        let line = &lines[replacement.line - 1];
+        let col = replacement.column.saturating_sub(1); // Convert to 0-based index
+
+        // Search for the old_pattern starting from the column position.
+        // This ensures we replace the correct occurrence when multiple identical links exist.
+        if let Some(pos) = line[col..].find(&replacement.old_pattern) {
+            let actual_pos = col + pos;
+            let end_pos = actual_pos + replacement.old_pattern.len();
+            let new_line = format!(
+                "{}{}{}",
+                &line[..actual_pos],
+                replacement.new_pattern,
+                &line[end_pos..]
+            );
+            lines[replacement.line - 1] = new_line;
+        } else {
+            return Err(MdrefError::Path(format!(
+                "Could not find link '{}' in line {} of file {}",
+                replacement.old_pattern,
+                replacement.line,
+                file_path.display()
+            )));
+        }
     }
+
+    // Reconstruct the content, preserving the original trailing newline if present.
+    let mut new_content = lines.join("\n");
+    if content.ends_with('\n') {
+        new_content.push('\n');
+    }
+    fs::write(file_path, new_content)?;
+
     Ok(())
 }
 
@@ -258,18 +302,23 @@ mod tests {
         teardown_test_dir(&dir);
     }
 
-    // ============= replace_link_in_file tests =============
+    // ============= apply_replacements tests =============
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_replace_link_in_file_basic() {
+    fn test_apply_replacements_basic() {
         let dir = setup_test_dir("replace_basic");
         let file_path = format!("{}/doc.md", dir);
         write_file(&file_path, "[Link](old.md)");
 
-        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "old.md".to_string());
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](old.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
 
-        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](new.md)"));
@@ -280,7 +329,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_replace_link_in_file_preserves_other_content() {
+    fn test_apply_replacements_preserves_other_content() {
         let dir = setup_test_dir("replace_preserve");
         let file_path = format!("{}/doc.md", dir);
         write_file(
@@ -288,9 +337,14 @@ mod tests {
             "# Title\n\nSome text [Link](old.md) more text.\n\nAnother paragraph.",
         );
 
-        let reference = Reference::new(PathBuf::from(&file_path), 3, 11, "old.md".to_string());
+        let replacements = vec![LinkReplacement {
+            line: 3,
+            column: 11,
+            old_pattern: "](old.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
 
-        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("# Title"));
@@ -302,14 +356,19 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_replace_link_in_file_line_out_of_range() {
+    fn test_apply_replacements_line_out_of_range() {
         let dir = setup_test_dir("replace_oor");
         let file_path = format!("{}/doc.md", dir);
         write_file(&file_path, "Single line");
 
-        let reference = Reference::new(PathBuf::from(&file_path), 999, 1, "link.md".to_string());
+        let replacements = vec![LinkReplacement {
+            line: 999,
+            column: 1,
+            old_pattern: "](link.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
 
-        let result = replace_link_in_file(&reference, PathBuf::from("new.md"));
+        let result = apply_replacements(Path::new(&file_path), &replacements);
         assert!(result.is_err());
 
         teardown_test_dir(&dir);
@@ -317,14 +376,19 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_replace_link_in_file_with_subdirectory_path() {
+    fn test_apply_replacements_with_subdirectory_path() {
         let dir = setup_test_dir("replace_subdir");
         let file_path = format!("{}/doc.md", dir);
         write_file(&file_path, "[Link](sub/old.md)");
 
-        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "sub/old.md".to_string());
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](sub/old.md)".to_string(),
+            new_pattern: "](other/new.md)".to_string(),
+        }];
 
-        replace_link_in_file(&reference, PathBuf::from("other/new.md")).unwrap();
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](other/new.md)"));
@@ -334,38 +398,28 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_replace_link_in_file_multiple_links_same_line_substring_issue() {
-        // This test demonstrates a potential bug where replace_link_in_file may
-        // incorrectly replace links when the same link appears multiple times on the same line.
-        //
-        // The issue: old_pattern = "](link_text)" uses simple string replace,
-        // which replaces ALL occurrences. If the same link text appears multiple times
-        // on the same line, all will be replaced even if we only want to replace one.
-        //
-        // Real bug scenario: [A](doc.md) and [B](doc.md)
-        // Both links point to the same file. If we only want to update the reference
-        // for [A] (e.g., because [A] is at column 1), [B] will also be incorrectly updated.
+    fn test_apply_replacements_only_replaces_target_link() {
+        // Verify that when two identical links exist on the same line,
+        // only the one at the specified column is replaced.
         let dir = setup_test_dir("replace_substring_issue");
         let file_path = format!("{}/doc.md", dir);
-        // Two links with the same path on the same line
-        // First link:  [A](doc.md) at column 1 — the one we want to replace
-        // Second link: [B](doc.md) at column 16 — should NOT be touched
         write_file(&file_path, "[A](doc.md) and [B](doc.md)");
 
-        // We want to replace only [A](doc.md) → [A](new.md)
-        let reference = Reference::new(PathBuf::from(&file_path), 1, 1, "doc.md".to_string());
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](doc.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
 
-        replace_link_in_file(&reference, PathBuf::from("new.md")).unwrap();
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
-        // The first link should be replaced
         assert!(
             content.contains("[A](new.md)"),
             "Expected [A](new.md) in content: {}",
             content
         );
-        // The second link must NOT be modified — this assertion will fail due to the bug,
-        // demonstrating that String::replace replaced all occurrences.
         assert!(
             content.contains("[B](doc.md)"),
             "Bug: [B](doc.md) was incorrectly modified. Content: {}",
@@ -375,7 +429,72 @@ mod tests {
         teardown_test_dir(&dir);
     }
 
-    // ============= update_reference tests =============
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_apply_replacements_multiple_in_same_file() {
+        // Verify that multiple replacements in the same file are applied correctly
+        // in a single read-write cycle.
+        let dir = setup_test_dir("replace_multi");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(
+            &file_path,
+            "[Link1](old.md)\n\n[Link2](old.md)\n\n[Link3](old.md)",
+        );
+
+        let replacements = vec![
+            LinkReplacement {
+                line: 1,
+                column: 1,
+                old_pattern: "](old.md)".to_string(),
+                new_pattern: "](new.md)".to_string(),
+            },
+            LinkReplacement {
+                line: 3,
+                column: 1,
+                old_pattern: "](old.md)".to_string(),
+                new_pattern: "](new.md)".to_string(),
+            },
+            LinkReplacement {
+                line: 5,
+                column: 1,
+                old_pattern: "](old.md)".to_string(),
+                new_pattern: "](new.md)".to_string(),
+            },
+        ];
+
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(!content.contains("](old.md)"));
+        assert_eq!(content.matches("](new.md)").count(), 3);
+
+        teardown_test_dir(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_apply_replacements_preserves_trailing_newline() {
+        let dir = setup_test_dir("replace_trailing_nl");
+        let file_path = format!("{}/doc.md", dir);
+        write_file(&file_path, "[Link](old.md)\n");
+
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](old.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
+
+        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.contains("](new.md)"));
+        assert!(content.ends_with('\n'), "Trailing newline was lost");
+
+        teardown_test_dir(&dir);
+    }
+
+    // ============= update via relative_path + apply_replacements tests =============
 
     #[test]
     #[allow(clippy::unwrap_used)]
@@ -386,9 +505,15 @@ mod tests {
         write_file(&ref_file, "[Link](old_target.md)");
         write_file(&new_target, "");
 
-        let reference = Reference::new(PathBuf::from(&ref_file), 1, 1, "old_target.md".to_string());
+        let new_link_path = relative_path(Path::new(&ref_file), Path::new(&new_target)).unwrap();
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](old_target.md)".to_string(),
+            new_pattern: format!("]({})", new_link_path.display()),
+        }];
 
-        update_reference(&reference, Path::new(&new_target)).unwrap();
+        apply_replacements(Path::new(&ref_file), &replacements).unwrap();
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("new_target.md"));
@@ -405,9 +530,15 @@ mod tests {
         write_file(&ref_file, "[Link](old.md)");
         write_file(&new_target, "");
 
-        let reference = Reference::new(PathBuf::from(&ref_file), 1, 1, "old.md".to_string());
+        let new_link_path = relative_path(Path::new(&ref_file), Path::new(&new_target)).unwrap();
+        let replacements = vec![LinkReplacement {
+            line: 1,
+            column: 1,
+            old_pattern: "](old.md)".to_string(),
+            new_pattern: format!("]({})", new_link_path.display()),
+        }];
 
-        update_reference(&reference, Path::new(&new_target)).unwrap();
+        apply_replacements(Path::new(&ref_file), &replacements).unwrap();
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("sub/new_target.md"));
@@ -444,11 +575,11 @@ mod tests {
         assert!(!is_external_url("image.png"));
     }
 
-    // ============= update_link with external URL =============
+    // ============= build_link_replacement with external URL =============
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_update_link_skips_external_url() {
+    fn test_build_link_replacement_skips_external_url() {
         let dir = setup_test_dir("upd_link_ext");
         let source = format!("{}/source.md", dir);
         let target = format!("{}/target.md", dir);
@@ -462,9 +593,10 @@ mod tests {
             "https://google.com".to_string(),
         );
 
-        // Should succeed without error — external URL is skipped
-        let result = update_link(&reference, Path::new(&source), Path::new(&target));
-        assert!(result.is_ok());
+        // Should return None — external URL is skipped
+        let result =
+            build_link_replacement(&reference, Path::new(&source), Path::new(&target)).unwrap();
+        assert!(result.is_none());
 
         // Content should remain unchanged
         let content = fs::read_to_string(&target).unwrap();
