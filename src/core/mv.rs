@@ -26,6 +26,11 @@ where
     let new_file_path = new_file_path.as_ref();
     let root_dir = root_dir.as_ref();
 
+    // If source and destination are the same, nothing to do.
+    if raw_file_path == new_file_path {
+        return Ok(());
+    }
+
     // Ensure the parent directory of the new file path exists.
     if let Some(parent) = new_file_path.parent() {
         fs::create_dir_all(parent)?;
@@ -111,7 +116,7 @@ fn split_link_and_anchor(link: &str) -> (&str, Option<&str>) {
 }
 
 /// Build a LinkReplacement for an internal link in the moved file.
-/// Returns `None` if the link is an external URL and should be skipped.
+/// Returns `None` if the link is an external URL or a broken link that cannot be resolved.
 fn build_link_replacement(
     r: &Reference,
     raw_filepath: &Path,
@@ -123,11 +128,18 @@ fn build_link_replacement(
         return Ok(None);
     }
 
-    let current_link_absolute_path = raw_filepath
+    // Strip anchor from link text so canonicalize works on the file path only.
+    let (link_path_only, anchor) = split_link_and_anchor(&r.link_text);
+
+    let parent = raw_filepath
         .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?
-        .join(&r.link_text)
-        .canonicalize()?;
+        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+
+    // Resolve the link path; skip broken links that cannot be canonicalized.
+    let current_link_absolute_path = match parent.join(link_path_only).canonicalize() {
+        Ok(p) => p,
+        Err(_) => return Ok(None),
+    };
     let new_file_absolute_path = new_filepath.canonicalize()?;
     let raw_file_canonical = raw_filepath.canonicalize()?;
 
@@ -141,8 +153,14 @@ fn build_link_replacement(
         relative_path(&new_file_absolute_path, &current_link_absolute_path)?
     };
 
+    // Reconstruct the new pattern with anchor preserved.
+    let new_link_with_anchor = match anchor {
+        Some(a) => format!("{}#{}", new_link_path.display(), a),
+        None => new_link_path.display().to_string(),
+    };
+
     let old_pattern = format!("]({})", r.link_text);
-    let new_pattern = format!("]({})", new_link_path.display());
+    let new_pattern = format!("]({})", new_link_with_anchor);
 
     Ok(Some(LinkReplacement {
         line: r.line,
@@ -600,6 +618,61 @@ mod tests {
         assert!(!is_external_url("../parent/file.md"));
         assert!(!is_external_url("./relative.md"));
         assert!(!is_external_url("image.png"));
+    }
+
+    // ============= build_link_replacement with external URL =============
+
+    // ============= build_link_replacement with anchored internal links =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_link_replacement_preserves_anchor() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let other = temp_dir.path().join("other.md");
+        let target = temp_dir.path().join("sub").join("target.md");
+        write_file(source.to_str().unwrap(), "[Details](other.md#details)");
+        write_file(other.to_str().unwrap(), "# Other");
+        write_file(target.to_str().unwrap(), "");
+
+        let reference = Reference::new(target.clone(), 1, 1, "other.md#details".to_string());
+
+        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        assert!(
+            result.is_some(),
+            "Should produce a replacement for anchored link"
+        );
+
+        let replacement = result.unwrap();
+        assert!(
+            replacement.new_pattern.contains("#details"),
+            "Anchor should be preserved in new pattern. Got: {}",
+            replacement.new_pattern
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_link_replacement_skips_broken_link() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let target = temp_dir.path().join("target.md");
+        write_file(source.to_str().unwrap(), "[Broken](nonexistent.md)");
+        write_file(target.to_str().unwrap(), "");
+
+        let reference = Reference::new(target.clone(), 1, 1, "nonexistent.md".to_string());
+
+        // Should return Ok(None) for broken links, not Err
+        let result = build_link_replacement(&reference, &source, &target);
+        assert!(
+            result.is_ok(),
+            "build_link_replacement should not error on broken links: {:?}",
+            result.err()
+        );
+        assert!(
+            result.unwrap().is_none(),
+            "Broken links should be skipped (return None)"
+        );
     }
 
     // ============= build_link_replacement with external URL =============

@@ -713,6 +713,140 @@ fn test_mv_file_deep_new_directory_with_links() {
     );
 }
 
+/// Move file with internal links containing anchors should preserve the anchor.
+/// Bug: build_link_replacement does not strip anchors before canonicalize,
+/// causing IO error or anchor loss.
+#[test]
+fn test_mv_file_internal_link_with_anchor_preserved() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create target of the link
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other\n\n## Details");
+
+    // Source file has a link with anchor fragment
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[Details](other.md#details)");
+
+    // Move source to a subdirectory
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(
+        result.is_ok(),
+        "mv_file should not fail when internal links have anchors: {:?}",
+        result.err()
+    );
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    // The anchor should be preserved and path updated
+    assert!(
+        content.contains("../other.md#details"),
+        "Internal link anchor should be preserved. Got: {}",
+        content
+    );
+}
+
+/// Move file with internal link that has anchor, staying in same directory.
+#[test]
+fn test_mv_file_internal_link_with_anchor_same_dir() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other\n\n## Section");
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[Section](other.md#section)");
+
+    let target_file = temp_dir.path().join("renamed.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(
+        result.is_ok(),
+        "mv_file should handle anchored internal links: {:?}",
+        result.err()
+    );
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        content.contains("other.md#section"),
+        "Anchor should be preserved in same-dir move. Got: {}",
+        content
+    );
+}
+
+/// Move file containing a broken (dangling) link should not fail.
+/// Bug: canonicalize() on non-existent link path returns IO error,
+/// causing the entire mv_file to fail.
+#[test]
+fn test_mv_file_with_broken_internal_link() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Source file has a link to a non-existent file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[Broken](nonexistent.md)");
+
+    let target_file = temp_dir.path().join("target.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    // Should succeed — broken links should be skipped, not cause failure
+    assert!(
+        result.is_ok(),
+        "mv_file should not fail due to broken internal links: {:?}",
+        result.err()
+    );
+    assert!(target_file.exists());
+    assert!(!source_file.exists());
+
+    // The broken link should be preserved as-is
+    let content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        content.contains("nonexistent.md"),
+        "Broken link should be preserved unchanged. Got: {}",
+        content
+    );
+}
+
+/// Moving a file to itself should not delete the file.
+/// Bug: fs::copy(src, src) is a no-op, then fs::remove_file(src) deletes the only copy.
+#[test]
+fn test_mv_file_source_equals_dest() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let file = temp_dir.path().join("same.md");
+    write_file(&file, "# Content");
+
+    // Move file to itself
+    let result = mv_file(
+        file.to_str().unwrap(),
+        file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    // Should either succeed as no-op or return an error, but NOT delete the file
+    assert!(
+        file.exists(),
+        "File should still exist after moving to itself"
+    );
+
+    if result.is_ok() {
+        let content = fs::read_to_string(&file).unwrap();
+        assert_eq!(content, "# Content");
+    }
+}
+
 /// Move file with anchor links, preserving the anchor fragments.
 #[test]
 fn test_mv_file_preserves_anchor_links() {
