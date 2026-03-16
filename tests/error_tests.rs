@@ -50,7 +50,7 @@ fn test_mv_file_io_error_nonexistent_source() {
     assert!(matches!(result.unwrap_err(), MdrefError::Path(_)));
 }
 
-// ============= mv_file overwrites existing target =============
+// ============= mv_file rejects existing target =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -63,19 +63,21 @@ fn test_mv_file_target_already_exists() {
     let target = temp_dir.path().join("target.md");
     write_file(target.clone(), "# Old target content");
 
-    // mv_file should overwrite the existing target
+    // mv_file should return an error when target already exists
     let result = mv_file(
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
-    assert!(result.is_ok());
+    assert!(result.is_err());
 
+    // Target content should remain unchanged
     let content = fs::read_to_string(&target).unwrap();
-    assert!(content.contains("Source content"));
-    assert!(!content.contains("Old target content"));
-    assert!(!source.exists());
+    assert!(content.contains("Old target content"));
+    assert!(!content.contains("Source content"));
+    // Source should still exist
+    assert!(source.exists());
 }
 
 // ============= Error display tests =============

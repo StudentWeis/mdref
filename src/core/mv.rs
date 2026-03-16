@@ -98,6 +98,16 @@ where
         return Ok(());
     }
 
+    // Check if destination file already exists to prevent accidental overwrite.
+    // This check is done after canonicalize comparison to handle the case where
+    // source and destination are the same file with different path representations.
+    if new_file_path.exists() {
+        return Err(MdrefError::Path(format!(
+            "Destination file already exists: {}",
+            new_file_path.display()
+        )));
+    }
+
     if !dry_run {
         // Ensure the parent directory of the new file path exists.
         if let Some(parent) = new_file_path.parent() {

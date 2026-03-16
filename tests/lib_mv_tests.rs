@@ -1315,3 +1315,79 @@ fn test_mv_file_dry_run_with_internal_links() {
         "Source file should not be modified during dry-run"
     );
 }
+
+// ============= destination already exists tests =============
+
+/// Moving a file to a destination that already exists should fail.
+/// The existing file should NOT be overwritten.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_destination_already_exists() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source Content\n\nThis is the source.");
+
+    // Create an existing target file with different content
+    let target_file = temp_dir.path().join("target.md");
+    write_file(
+        &target_file,
+        "# Existing Target\n\nThis file already exists.",
+    );
+
+    // Store original target content to verify it wasn't overwritten
+    let original_target_content = fs::read_to_string(&target_file).unwrap();
+
+    // Attempt to move - should fail because target already exists
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    // The operation should fail
+    assert!(
+        result.is_err(),
+        "mv_file should return an error when destination already exists"
+    );
+
+    // Source file should still exist (not moved)
+    assert!(
+        source_file.exists(),
+        "Source file should still exist after failed move"
+    );
+
+    // Target file content should be unchanged
+    let target_content = fs::read_to_string(&target_file).unwrap();
+    assert_eq!(
+        target_content, original_target_content,
+        "Target file should not be modified"
+    );
+}
+
+/// Moving a file to an existing destination should fail even in dry-run mode.
+#[test]
+fn test_mv_file_dry_run_destination_already_exists() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source");
+
+    let target_file = temp_dir.path().join("target.md");
+    write_file(&target_file, "# Existing Target");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        true,
+    );
+
+    // Dry-run should also fail for existing destination
+    assert!(
+        result.is_err(),
+        "Dry-run should also return error when destination already exists"
+    );
+}
