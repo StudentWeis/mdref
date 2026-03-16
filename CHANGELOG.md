@@ -2,6 +2,36 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.1] - 2026-03-16
+
+### 🚀 Features
+- Implement utility functions for link processing and update tests to filter external URLs by @StudentWeis
+- Refactor model module to include LinkReplacement and MoveTransaction, and update mv.rs to use these new structures by @StudentWeis
+- Implement transaction support for mv_file to ensure atomicity and rollback on failure by @StudentWeis
+- Enhance mv_file to support moving files into existing directories and update references accordingly by @StudentWeis
+- Add checks to prevent overwriting existing files during move operations by @StudentWeis
+- Add rename to lib by @StudentWeis
+- Add dry-run option for mv and rename commands to preview changes without modifying files by @StudentWeis
+- Implement link anchor stripping and preserve anchors during file moves by @StudentWeis
+
+### 🐛 Bug Fixes
+- Preserve pure anchor links during file moves by @StudentWeis
+- Enhance mv_file to check for source existence and handle path normalization for identical files by @StudentWeis
+- Preserve anchors in internal links during file moves and handle broken links gracefully by @StudentWeis
+- Ensure precise link replacement in Markdown files to avoid incorrect updates for identical links on the same line by @StudentWeis
+- Preserve external URLs during file move operation by @StudentWeis
+
+### 🚜 Refactor
+- Replace custom test directory setup with tempfile for improved test isolation by @StudentWeis
+- Enhance link replacement logic to ensure precise updates in Markdown files by @StudentWeis
+- Improve test setup using tempfile crate by @StudentWeis
+
+### 🧪 Testing
+- Add comprehensive testing framework and improve existing tests for better coverage and adherence to TDD principles by @StudentWeis
+
+### ⚙️ Miscellaneous Tasks
+- Update dependencies to latest versions for improved stability and performance by @StudentWeis
+
 ## [0.4.0] - 2026-03-13
 
 ### 🚀 Features
