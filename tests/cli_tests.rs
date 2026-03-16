@@ -320,3 +320,101 @@ fn test_cli_rename_updates_references_e2e() {
     assert!(ref_content.contains("new_doc.md"));
     assert!(!ref_content.contains("old_doc.md"));
 }
+
+// ============= dry-run CLI tests =============
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_mv_dry_run_does_not_move() {
+    let binary = binary_path();
+    if !binary.exists() {
+        return;
+    }
+
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("source.md");
+    let target = temp_dir.path().join("target.md");
+    write_file(&source, "# Source");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Source](source.md)");
+
+    let output = Command::new(&binary)
+        .args([
+            "mv",
+            source.to_str().unwrap(),
+            target.to_str().unwrap(),
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+
+    // Source should still exist, target should not
+    assert!(source.exists(), "Source should still exist after dry-run");
+    assert!(!target.exists(), "Target should not be created during dry-run");
+
+    // Reference should be unchanged
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(ref_content, "[Source](source.md)");
+
+    // Stdout should contain dry-run output
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("[dry-run]"),
+        "Dry-run output should contain [dry-run] prefix. Got: {}",
+        stdout
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_rename_dry_run_does_not_rename() {
+    let binary = binary_path();
+    if !binary.exists() {
+        return;
+    }
+
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("old.md");
+    write_file(&source, "# Old name");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Old](old.md)");
+
+    let output = Command::new(&binary)
+        .args([
+            "rename",
+            source.to_str().unwrap(),
+            "new.md",
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+            "--dry-run",
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+
+    // Source should still exist, new name should not
+    assert!(source.exists(), "Source should still exist after dry-run");
+    assert!(
+        !temp_dir.path().join("new.md").exists(),
+        "Renamed file should not be created during dry-run"
+    );
+
+    // Reference should be unchanged
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(ref_content, "[Old](old.md)");
+
+    // Stdout should contain dry-run output
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("[dry-run]"),
+        "Dry-run output should contain [dry-run] prefix. Got: {}",
+        stdout
+    );
+}

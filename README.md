@@ -77,6 +77,6 @@ Links in ./examples/main.md:
 
 # Contributing
 
-If you want to submit code to this repository, please first refer to [CONTRIBUTING](./CONTRIBUTING).
+If you want to submit code to this repository, please first refer to [CONTRIBUTING](CONTRIBUTING).
 
 Thanks for your help!

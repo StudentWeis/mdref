@@ -24,6 +24,9 @@ pub enum Commands {
         /// Root directory
         #[arg(short, long)]
         root: Option<String>,
+        /// Preview changes without modifying any files
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Move a file and update references
     Mv {
@@ -34,13 +37,16 @@ pub enum Commands {
         /// Root directory
         #[arg(short, long)]
         root: Option<String>,
+        /// Preview changes without modifying any files
+        #[arg(long)]
+        dry_run: bool,
     },
 }
 
 pub fn handle_command(command: Commands) -> Result<()> {
     match command {
         Commands::Find { filepath, root } => find::run(filepath, root),
-        Commands::Rename { old, new, root } => rename::run(old, new, root),
-        Commands::Mv { source, dest, root } => mv::run(source, dest, root),
+        Commands::Rename { old, new, root, dry_run } => rename::run(old, new, root, dry_run),
+        Commands::Mv { source, dest, root, dry_run } => mv::run(source, dest, root, dry_run),
     }
 }

@@ -19,7 +19,7 @@ fn write_file<P: AsRef<Path>>(path: P, content: &str) {
 #[allow(clippy::unwrap_used)]
 fn rename_file(old_path: &Path, new_name: &str, root_dir: &Path) -> mdref::Result<()> {
     let new = old_path.with_file_name(new_name);
-    mv_file(old_path, &new, root_dir)
+    mv_file(old_path, &new, root_dir, false)
 }
 
 // ============= Basic rename tests =============

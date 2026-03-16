@@ -16,7 +16,10 @@ struct LinkReplacement {
 /// Move references from the old file path to the new file path within Markdown files in the specified root directory.
 /// This function finds all references to the old file and updates them to point to the new file.
 /// Moreover, it updates links within the moved file itself to ensure they remain valid.
-pub fn mv_file<P, B, D>(raw_file_path: P, new_file_path: B, root_dir: D) -> Result<()>
+///
+/// When `dry_run` is `true`, no files are created, moved, or modified. Instead, the function
+/// prints all changes that *would* be made, allowing the user to preview the operation.
+pub fn mv_file<P, B, D>(raw_file_path: P, new_file_path: B, root_dir: D, dry_run: bool) -> Result<()>
 where
     P: AsRef<Path>,
     B: AsRef<Path>,
@@ -90,17 +93,21 @@ where
         return Ok(());
     }
 
-    // Ensure the parent directory of the new file path exists.
-    if let Some(parent) = new_file_path.parent() {
-        fs::create_dir_all(parent)?;
+    if !dry_run {
+        // Ensure the parent directory of the new file path exists.
+        if let Some(parent) = new_file_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
     }
 
     // Find all references to the old file path within the specified root directory.
     let references = find_references(raw_file_path, root_dir)?;
 
-    // Copy the original file to the new file path.
-    // We copy first to avoid data loss in case of errors during reference updates.
-    fs::copy(raw_file_path, new_file_path)?;
+    if !dry_run {
+        // Copy the original file to the new file path.
+        // We copy first to avoid data loss in case of errors during reference updates.
+        fs::copy(raw_file_path, new_file_path)?;
+    }
 
     // Collect all reference replacements, grouped by file path.
     let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
@@ -130,6 +137,23 @@ where
             });
     }
 
+    if dry_run {
+        // In dry-run mode, compute internal link replacements from the source file
+        // (since the file has not actually been copied to the new location).
+        let links = find_links(raw_file_path)?;
+        for link in &links {
+            if let Some(replacement) = build_link_replacement(link, raw_file_path, new_file_path)? {
+                replacements_by_file
+                    .entry(new_file_path.to_path_buf())
+                    .or_default()
+                    .push(replacement);
+            }
+        }
+
+        print_dry_run_report(raw_file_path, new_file_path, &replacements_by_file);
+        return Ok(());
+    }
+
     // Collect all link replacements for the moved file itself.
     let links = find_links(new_file_path)?;
     for link in &links {
@@ -150,6 +174,39 @@ where
     fs::remove_file(raw_file_path)?;
 
     Ok(())
+}
+
+/// Print a human-readable report of all changes that would be made during a move operation.
+fn print_dry_run_report(
+    source: &Path,
+    destination: &Path,
+    replacements_by_file: &HashMap<PathBuf, Vec<LinkReplacement>>,
+) {
+    println!(
+        "[dry-run] Would move: {} -> {}",
+        source.display(),
+        destination.display()
+    );
+
+    if replacements_by_file.is_empty() {
+        println!("[dry-run] No references to update.");
+        return;
+    }
+
+    for (file_path, replacements) in replacements_by_file {
+        let label = if file_path == destination {
+            "Would update links in moved file"
+        } else {
+            "Would update reference in"
+        };
+        println!("[dry-run] {} {}:", label, file_path.display());
+        for replacement in replacements {
+            println!(
+                "  Line {}: {} -> {}",
+                replacement.line, replacement.old_pattern, replacement.new_pattern
+            );
+        }
+    }
 }
 
 /// Check whether a link text represents an external URL (e.g. https://, http://, ftp://).
@@ -205,7 +262,22 @@ fn build_link_replacement(
         Ok(p) => p,
         Err(_) => return Ok(None),
     };
-    let new_file_absolute_path = new_filepath.canonicalize()?;
+    let new_file_absolute_path = if new_filepath.exists() {
+        new_filepath.canonicalize()?
+    } else {
+        let parent = new_filepath
+            .parent()
+            .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+        let parent_canonical = if parent.exists() {
+            parent.canonicalize()?
+        } else {
+            parent.to_path_buf()
+        };
+        let filename = new_filepath
+            .file_name()
+            .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+        parent_canonical.join(filename)
+    };
     let raw_file_canonical = raw_filepath.canonicalize()?;
 
     let new_link_path = if current_link_absolute_path == raw_file_canonical {
@@ -299,13 +371,62 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
 }
 
 /// Compute the relative path from one file to another.
+/// Handles the case where either path may not exist yet (e.g. during dry-run)
+/// by canonicalizing parent directories when possible and falling back to raw paths.
 fn relative_path(from: &Path, to: &Path) -> Result<PathBuf> {
-    let to_canonical = to.canonicalize()?;
+    let to_resolved = resolve_path(to)?;
     let from_parent = from
         .parent()
         .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
-    let from_canonical: PathBuf = from_parent.canonicalize()?;
-    Ok(diff_paths(to_canonical, from_canonical).unwrap_or_default())
+    let from_resolved = if from_parent.exists() {
+        from_parent.canonicalize()?
+    } else {
+        resolve_parent(from_parent)?
+    };
+    Ok(diff_paths(to_resolved, from_resolved).unwrap_or_default())
+}
+
+/// Resolve a path to its canonical form, handling non-existent files
+/// by canonicalizing the nearest existing ancestor and joining the rest.
+fn resolve_path(path: &Path) -> Result<PathBuf> {
+    if path.exists() {
+        return Ok(path.canonicalize()?);
+    }
+    let parent = path
+        .parent()
+        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let filename = path
+        .file_name()
+        .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+    let parent_resolved = if parent.exists() {
+        parent.canonicalize()?
+    } else {
+        resolve_parent(parent)?
+    };
+    Ok(parent_resolved.join(filename))
+}
+
+/// Resolve a directory path by canonicalizing the nearest existing ancestor
+/// and joining the remaining non-existent components.
+fn resolve_parent(dir: &Path) -> Result<PathBuf> {
+    let mut components_to_append = Vec::new();
+    let mut current = dir;
+    loop {
+        if current.exists() {
+            let mut resolved = current.canonicalize()?;
+            for component in components_to_append.into_iter().rev() {
+                resolved.push(component);
+            }
+            return Ok(resolved);
+        }
+        if let Some(file_name) = current.file_name() {
+            components_to_append.push(file_name.to_owned());
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => return Ok(dir.to_path_buf()),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -378,14 +499,15 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_relative_path_nonexistent_target() {
         let temp_dir = TempDir::new().unwrap();
         let from = temp_dir.path().join("from.md");
         write_file(from.to_str().unwrap(), "");
 
         let ghost = temp_dir.path().join("ghost.md");
-        let result = relative_path(&from, &ghost);
-        assert!(result.is_err());
+        let result = relative_path(&from, &ghost).unwrap();
+        assert_eq!(result, PathBuf::from("ghost.md"));
     }
 
     // ============= apply_replacements tests =============

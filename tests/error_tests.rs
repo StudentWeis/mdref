@@ -42,6 +42,7 @@ fn test_mv_file_io_error_nonexistent_source() {
         temp_dir.path().join("ghost.md").to_str().unwrap(),
         temp_dir.path().join("target.md").to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
+        false,
     );
     assert!(result.is_err());
     // mv_file now explicitly checks for source existence and returns Path error
@@ -67,6 +68,7 @@ fn test_mv_file_target_already_exists() {
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
+        false,
     );
     assert!(result.is_ok());
 
@@ -144,6 +146,7 @@ fn test_mv_file_no_references_still_moves() {
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
+        false,
     );
 
     assert!(result.is_ok());
@@ -171,6 +174,7 @@ fn test_mv_file_no_internal_links() {
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
+        false,
     )
     .unwrap();
 
