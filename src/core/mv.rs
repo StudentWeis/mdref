@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use super::model::{LinkReplacement, MoveTransaction};
 use super::util::{is_external_url, relative_path};
-use crate::{MdrefError, Reference, Result, find_links, find_references};
+use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references};
 
 // LinkReplacement and MoveTransaction are now defined in the model module
 
@@ -140,8 +140,11 @@ fn plan_external_replacements(
             None => new_link_path.display().to_string(),
         };
 
-        let old_pattern = format!("]({})", reference.link_text);
-        let new_pattern = format!("]({})", new_link_with_anchor);
+        let (old_pattern, new_pattern) = build_replacement_patterns(
+            &reference.link_type,
+            &reference.link_text,
+            &new_link_with_anchor,
+        );
 
         replacements_by_file
             .entry(reference.path.clone())
@@ -155,6 +158,21 @@ fn plan_external_replacements(
     }
 
     Ok(replacements_by_file)
+}
+
+/// Build the old/new replacement pattern pair based on the link type.
+///
+/// - For inline links (`[text](url)`), the pattern is `](url)`.
+/// - For reference definitions (`[label]: url`), the pattern is `]: url`.
+fn build_replacement_patterns(
+    link_type: &LinkType,
+    old_url: &str,
+    new_url: &str,
+) -> (String, String) {
+    match link_type {
+        LinkType::Inline => (format!("]({})", old_url), format!("]({})", new_url)),
+        LinkType::ReferenceDefinition => (format!("]: {}", old_url), format!("]: {}", new_url)),
+    }
 }
 
 /// Collect all link replacements needed for internal links within the moved file itself.
@@ -394,8 +412,8 @@ fn build_link_replacement(
         None => new_link_path.display().to_string(),
     };
 
-    let old_pattern = format!("]({})", r.link_text);
-    let new_pattern = format!("]({})", new_link_with_anchor);
+    let (old_pattern, new_pattern) =
+        build_replacement_patterns(&r.link_type, &r.link_text, &new_link_with_anchor);
 
     Ok(Some(LinkReplacement {
         line: r.line,

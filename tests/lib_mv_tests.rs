@@ -1908,3 +1908,230 @@ fn test_mv_file_rollback_preserves_source_content() {
         "Source file content must be exactly preserved after rollback"
     );
 }
+
+// ============= link reference definition tests =============
+
+/// Moving a file that is referenced via a link reference definition should update the definition.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_updates_link_reference_definition_in_external_file() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target Content");
+
+    // Create a referencing file that uses link reference definition syntax
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(
+        &ref_file,
+        "See [the target][ref] for details.\n\n[ref]: target.md",
+    );
+
+    let target_file = temp_dir.path().join("docs").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    // The link reference definition should be updated
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("]: docs/target.md"),
+        "Link reference definition should be updated to docs/target.md. Got: {}",
+        ref_content
+    );
+    // The usage site should remain unchanged
+    assert!(
+        ref_content.contains("[the target][ref]"),
+        "Link usage should remain unchanged. Got: {}",
+        ref_content
+    );
+}
+
+/// Moving a file that is referenced via a link reference definition with a title.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_updates_link_reference_definition_with_title() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[text][ref]\n\n[ref]: target.md \"My Title\"");
+
+    let target_file = temp_dir.path().join("sub").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("]: sub/target.md"),
+        "Link reference definition URL should be updated. Got: {}",
+        ref_content
+    );
+    assert!(
+        ref_content.contains("\"My Title\""),
+        "Title should be preserved. Got: {}",
+        ref_content
+    );
+}
+
+/// Moving a file with both inline links and link reference definitions referencing it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_mixed_inline_and_reference_definition() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    // File with both inline link and reference definition pointing to the same target
+    let ref_file = temp_dir.path().join("mixed.md");
+    write_file(
+        &ref_file,
+        "[inline](target.md)\n\n[ref link][myref]\n\n[myref]: target.md",
+    );
+
+    let target_file = temp_dir.path().join("docs").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    // Inline link should NOT be updated (it was replaced by the reference definition)
+    // Actually: the inline link is a separate link that doesn't use reference syntax,
+    // so it should be updated via the normal inline path
+    assert!(
+        ref_content.contains("](docs/target.md)"),
+        "Inline link should be updated. Got: {}",
+        ref_content
+    );
+    assert!(
+        ref_content.contains("]: docs/target.md"),
+        "Reference definition should be updated. Got: {}",
+        ref_content
+    );
+}
+
+/// The moved file itself contains link reference definitions pointing to other files.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_updates_internal_link_reference_definitions() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a sibling file
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other");
+
+    // Create source file with link reference definition to sibling
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[see other][ref]\n\n[ref]: other.md");
+
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    // The moved file's internal link reference definition should be updated
+    let moved_content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        moved_content.contains("]: ../other.md"),
+        "Internal link reference definition should be updated to ../other.md. Got: {}",
+        moved_content
+    );
+}
+
+/// Dry-run with link reference definitions should not modify any files.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_dry_run_with_link_reference_definitions() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    let ref_file = temp_dir.path().join("index.md");
+    let original_content = "[text][ref]\n\n[ref]: target.md";
+    write_file(&ref_file, original_content);
+
+    let target_file = temp_dir.path().join("docs").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        true,
+    );
+
+    assert!(result.is_ok());
+
+    // Nothing should be modified
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(
+        ref_content, original_content,
+        "Dry-run should not modify reference file"
+    );
+    assert!(source_file.exists(), "Source should still exist");
+    assert!(!target_file.exists(), "Target should not be created");
+}
+
+/// Multiple link reference definitions in the same file referencing the moved file.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_multiple_link_reference_definitions_same_file() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(
+        &ref_file,
+        "[a][ref1]\n[b][ref2]\n\n[ref1]: target.md\n[ref2]: target.md",
+    );
+
+    let target_file = temp_dir.path().join("docs").join("target.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let definition_count = ref_content.matches("]: docs/target.md").count();
+    assert_eq!(
+        definition_count, 2,
+        "Both reference definitions should be updated. Got: {}",
+        ref_content
+    );
+}
