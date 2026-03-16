@@ -2,103 +2,11 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use super::model::{LinkReplacement, MoveTransaction};
 use crate::{MdrefError, Reference, Result, find_links, find_references};
 use pathdiff::diff_paths;
 
-/// A pending replacement: which line/column to find the old pattern, and what to replace it with.
-struct LinkReplacement {
-    line: usize,
-    column: usize,
-    old_pattern: String,
-    new_pattern: String,
-}
-
-// ============= Transaction support =============
-
-/// Tracks all filesystem mutations so they can be rolled back on failure.
-///
-/// The transaction records three kinds of operations:
-/// 1. **File snapshots** – original content of files that will be modified in-place.
-/// 2. **Copied destination** – the new file created by `fs::copy`.
-/// 3. **Removed source** – set after the original file is deleted, so rollback can restore it.
-struct MoveTransaction {
-    file_snapshots: HashMap<PathBuf, String>,
-    copied_destination: Option<PathBuf>,
-    source_removed: bool,
-    source_path: PathBuf,
-    destination_path: PathBuf,
-}
-
-impl MoveTransaction {
-    fn new(source_path: PathBuf, destination_path: PathBuf) -> Self {
-        Self {
-            file_snapshots: HashMap::new(),
-            copied_destination: None,
-            source_removed: false,
-            source_path,
-            destination_path,
-        }
-    }
-
-    /// Snapshot a file's current content before modifying it.
-    fn snapshot_file(&mut self, path: &Path) -> Result<()> {
-        if !self.file_snapshots.contains_key(path) {
-            let content = fs::read_to_string(path)?;
-            self.file_snapshots.insert(path.to_path_buf(), content);
-        }
-        Ok(())
-    }
-
-    /// Record that the destination file was created via copy.
-    fn mark_copied(&mut self) {
-        self.copied_destination = Some(self.destination_path.clone());
-    }
-
-    /// Record that the source file has been removed.
-    fn mark_source_removed(&mut self) {
-        self.source_removed = true;
-    }
-
-    /// Undo all recorded mutations, returning any errors encountered during rollback.
-    fn rollback(&self) -> Vec<String> {
-        let mut errors = Vec::new();
-
-        // 1. Restore all modified files to their original content.
-        for (path, original_content) in &self.file_snapshots {
-            if let Err(err) = fs::write(path, original_content) {
-                errors.push(format!("Failed to restore {}: {}", path.display(), err));
-            }
-        }
-
-        // 2. If the source was deleted, restore it from the destination copy.
-        if self.source_removed
-            && let Some(dest) = &self.copied_destination
-            && dest.exists()
-            && let Err(err) = fs::copy(dest, &self.source_path)
-        {
-            errors.push(format!(
-                "Failed to restore source {} from {}: {}",
-                self.source_path.display(),
-                dest.display(),
-                err
-            ));
-        }
-
-        // 3. Remove the destination file that was created by copy.
-        if let Some(dest) = &self.copied_destination
-            && dest.exists()
-            && let Err(err) = fs::remove_file(dest)
-        {
-            errors.push(format!(
-                "Failed to remove copied destination {}: {}",
-                dest.display(),
-                err
-            ));
-        }
-
-        errors
-    }
-}
+// LinkReplacement and MoveTransaction are now defined in the model module
 
 /// Execute a fallible closure within a transaction context.
 /// If the closure returns an error, the transaction is rolled back automatically.
