@@ -1,10 +1,15 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use walkdir::WalkDir;
+
 use super::model::{LinkReplacement, MoveTransaction};
-use super::util::{is_external_url, relative_path};
+use super::util::{is_external_url, relative_path, url_decode_link};
 use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references};
+
+type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
+type SnapshotPaths = Vec<PathBuf>;
 
 // LinkReplacement and MoveTransaction are now defined in the model module
 
@@ -90,7 +95,7 @@ fn canonicalize_destination(destination: &Path) -> Result<PathBuf> {
 fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, PathBuf, PathBuf)> {
     if !source.exists() {
         return Err(MdrefError::Path(format!(
-            "Source file does not exist: {}",
+            "Source path does not exist: {}",
             source.display()
         )));
     }
@@ -114,8 +119,15 @@ fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, Pa
 
     if resolved_dest.exists() {
         return Err(MdrefError::Path(format!(
-            "Destination file already exists: {}",
+            "Destination path already exists: {}",
             resolved_dest.display()
+        )));
+    }
+
+    if source_canonical.is_dir() && dest_canonical.starts_with(&source_canonical) {
+        return Err(MdrefError::Path(format!(
+            "Cannot move directory '{}' into itself or one of its subdirectories",
+            source.display()
         )));
     }
 
@@ -128,8 +140,8 @@ fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, Pa
 fn plan_external_replacements(
     references: &[Reference],
     resolved_dest: &Path,
-) -> Result<HashMap<PathBuf, Vec<LinkReplacement>>> {
-    let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
+) -> Result<ReplacementPlan> {
+    let mut replacements_by_file: ReplacementPlan = HashMap::new();
 
     for reference in references {
         let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
@@ -193,9 +205,181 @@ fn plan_internal_replacements(
     Ok(replacements)
 }
 
+fn build_directory_path_mappings(
+    source_dir: &Path,
+    source_canonical: &Path,
+    dest_canonical: &Path,
+) -> Result<HashMap<PathBuf, PathBuf>> {
+    let mut mappings = HashMap::new();
+    mappings.insert(source_canonical.to_path_buf(), dest_canonical.to_path_buf());
+
+    for entry in WalkDir::new(source_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .skip(1)
+    {
+        let relative = entry.path().strip_prefix(source_dir).map_err(|e| {
+            MdrefError::Path(format!(
+                "Cannot compute relative path for '{}' under '{}': {}",
+                entry.path().display(),
+                source_dir.display(),
+                e
+            ))
+        })?;
+        let old_path = entry.path().canonicalize().map_err(|e| {
+            MdrefError::Path(format!(
+                "Cannot canonicalize directory entry '{}': {}",
+                entry.path().display(),
+                e
+            ))
+        })?;
+        mappings.insert(old_path, dest_canonical.join(relative));
+    }
+
+    Ok(mappings)
+}
+
+fn collect_markdown_files(source_dir: &Path) -> Vec<PathBuf> {
+    WalkDir::new(source_dir)
+        .sort_by_file_name()
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.file_type().is_file())
+        .map(|entry| entry.into_path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("md"))
+        .collect()
+}
+
+fn resolve_reference_target(base_file: &Path, link_path_only: &str) -> Option<PathBuf> {
+    if link_path_only.is_empty() {
+        return None;
+    }
+
+    let decoded_link = url_decode_link(link_path_only);
+    let decoded_path = Path::new(&decoded_link);
+    let resolved = if decoded_path.is_absolute() {
+        decoded_path.to_path_buf()
+    } else {
+        base_file.parent()?.join(decoded_path)
+    };
+
+    resolved.canonicalize().ok()
+}
+
+fn remap_existing_path(
+    path: &Path,
+    source_canonical: &Path,
+    path_mappings: &HashMap<PathBuf, PathBuf>,
+) -> Result<PathBuf> {
+    let canonical = path.canonicalize().map_err(|e| {
+        MdrefError::Path(format!(
+            "Cannot canonicalize path '{}': {}",
+            path.display(),
+            e
+        ))
+    })?;
+
+    if canonical.starts_with(source_canonical) {
+        path_mappings.get(&canonical).cloned().ok_or_else(|| {
+            MdrefError::Path(format!(
+                "Cannot map moved path '{}' to its destination",
+                path.display()
+            ))
+        })
+    } else {
+        Ok(path.to_path_buf())
+    }
+}
+
+fn build_replacement_for_target(
+    reference: &Reference,
+    file_after_move: &Path,
+    new_target: &Path,
+) -> Result<LinkReplacement> {
+    let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
+    let new_link_path = relative_path(file_after_move, new_target)?;
+
+    let new_link_with_anchor = match anchor {
+        Some(anchor) => format!("{}#{}", new_link_path.display(), anchor),
+        None => new_link_path.display().to_string(),
+    };
+
+    let (old_pattern, new_pattern) = build_replacement_patterns(
+        &reference.link_type,
+        &reference.link_text,
+        &new_link_with_anchor,
+    );
+
+    Ok(LinkReplacement {
+        line: reference.line,
+        column: reference.column,
+        old_pattern,
+        new_pattern,
+    })
+}
+
+fn plan_directory_replacements(
+    source_dir: &Path,
+    source_canonical: &Path,
+    dest_canonical: &Path,
+    root_dir: &Path,
+) -> Result<(ReplacementPlan, SnapshotPaths)> {
+    let path_mappings =
+        build_directory_path_mappings(source_dir, source_canonical, dest_canonical)?;
+    let mut replacements_by_file: ReplacementPlan = HashMap::new();
+    let mut snapshot_paths: HashSet<PathBuf> = HashSet::new();
+
+    for reference in find_references(source_dir, root_dir)? {
+        let (link_path_only, _) = split_link_and_anchor(&reference.link_text);
+        let Some(old_target) = resolve_reference_target(&reference.path, link_path_only) else {
+            continue;
+        };
+        let Some(new_target) = path_mappings.get(&old_target) else {
+            continue;
+        };
+
+        let file_after_move =
+            remap_existing_path(&reference.path, source_canonical, &path_mappings)?;
+        let replacement = build_replacement_for_target(&reference, &file_after_move, new_target)?;
+
+        replacements_by_file
+            .entry(file_after_move)
+            .or_default()
+            .push(replacement);
+        snapshot_paths.insert(reference.path);
+    }
+
+    for markdown_file in collect_markdown_files(source_dir) {
+        let file_after_move =
+            remap_existing_path(&markdown_file, source_canonical, &path_mappings)?;
+        let links = find_links(&markdown_file)?;
+
+        for link in links {
+            let (link_path_only, _) = split_link_and_anchor(&link.link_text);
+            let Some(target_path) = resolve_reference_target(&markdown_file, link_path_only) else {
+                continue;
+            };
+
+            if target_path.starts_with(source_canonical) {
+                continue;
+            }
+
+            let replacement = build_replacement_for_target(&link, &file_after_move, &target_path)?;
+            replacements_by_file
+                .entry(file_after_move.clone())
+                .or_default()
+                .push(replacement);
+            snapshot_paths.insert(markdown_file.clone());
+        }
+    }
+
+    Ok((replacements_by_file, snapshot_paths.into_iter().collect()))
+}
+
 // ============= Public API =============
 
-/// Move a Markdown file and atomically update all references across the project.
+/// Move a Markdown file or directory and atomically update all references across the project.
 ///
 /// This function finds all references to the source file and updates them to point to the
 /// new location. It also updates links within the moved file itself to ensure they remain valid.
@@ -224,6 +408,19 @@ where
     let new_file_path = new_file_path.as_ref();
     let root_dir = root_dir.as_ref();
 
+    if raw_file_path.is_dir() {
+        return mv_directory(raw_file_path, new_file_path, root_dir, dry_run);
+    }
+
+    mv_regular_file(raw_file_path, new_file_path, root_dir, dry_run)
+}
+
+fn mv_regular_file(
+    raw_file_path: &Path,
+    new_file_path: &Path,
+    root_dir: &Path,
+    dry_run: bool,
+) -> Result<()> {
     let (resolved_dest, _source_canonical, _dest_canonical) =
         match validate_move_paths(raw_file_path, new_file_path) {
             Ok(paths) => paths,
@@ -295,6 +492,46 @@ where
     transaction.mark_source_removed();
 
     Ok(())
+}
+
+fn mv_directory(source_dir: &Path, new_path: &Path, root_dir: &Path, dry_run: bool) -> Result<()> {
+    let (resolved_dest, source_canonical, dest_canonical) =
+        match validate_move_paths(source_dir, new_path) {
+            Ok(paths) => paths,
+            Err(e) => {
+                if e.to_string().contains("resolve to the same file") {
+                    return Ok(());
+                }
+                return Err(e);
+            }
+        };
+
+    let (replacements_by_file, snapshot_paths) =
+        plan_directory_replacements(source_dir, &source_canonical, &dest_canonical, root_dir)?;
+
+    if dry_run {
+        print_dry_run_report(source_dir, &resolved_dest, &replacements_by_file);
+        return Ok(());
+    }
+
+    let mut transaction = MoveTransaction::new(source_dir.to_path_buf(), resolved_dest.clone());
+    for snapshot_path in snapshot_paths {
+        transaction.snapshot_file(&snapshot_path)?;
+    }
+
+    if let Some(parent) = resolved_dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::rename(source_dir, &resolved_dest)?;
+    transaction.mark_renamed();
+
+    execute_with_rollback(&transaction, || {
+        for (file_path, replacements) in &replacements_by_file {
+            apply_replacements(file_path, replacements)?;
+        }
+        Ok(())
+    })
 }
 
 /// Print a human-readable report of all changes that would be made during a move operation.

@@ -516,6 +516,101 @@ fn test_mv_file_from_subdir_to_root() {
     assert!(content.contains("sub/sibling.md"));
 }
 
+#[test]
+fn test_mv_directory_updates_external_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_dir = temp_dir.path().join("docs");
+    let guide_file = source_dir.join("guide.md");
+    let nested_file = source_dir.join("nested").join("topic.md");
+    write_file(&guide_file, "# Guide");
+    write_file(&nested_file, "# Topic");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(
+        &ref_file,
+        "[Guide](docs/guide.md)\n\n[Topic](docs/nested/topic.md)",
+    );
+
+    let target_dir = temp_dir.path().join("archive");
+    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+
+    assert!(target_dir.join("guide.md").exists());
+    assert!(target_dir.join("nested").join("topic.md").exists());
+    assert!(!source_dir.exists());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(ref_content.contains("archive/guide.md"));
+    assert!(ref_content.contains("archive/nested/topic.md"));
+    assert!(!ref_content.contains("docs/guide.md"));
+    assert!(!ref_content.contains("docs/nested/topic.md"));
+}
+
+#[test]
+fn test_mv_directory_updates_internal_links_to_outside_files() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_dir = temp_dir.path().join("docs");
+    let nested_file = source_dir.join("guide.md");
+    let external_file = temp_dir.path().join("shared").join("faq.md");
+    write_file(&external_file, "# FAQ");
+    write_file(&nested_file, "[FAQ](../shared/faq.md)");
+
+    let target_dir = temp_dir.path().join("archive").join("docs");
+    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+
+    let moved_content = fs::read_to_string(target_dir.join("guide.md")).unwrap();
+    assert!(moved_content.contains("../../shared/faq.md"));
+}
+
+#[test]
+fn test_mv_directory_preserves_internal_links_within_directory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_dir = temp_dir.path().join("docs");
+    let guide_file = source_dir.join("guide.md");
+    let topic_file = source_dir.join("nested").join("topic.md");
+    write_file(&guide_file, "[Topic](nested/topic.md)");
+    write_file(&topic_file, "[Guide](../guide.md)");
+
+    let target_dir = temp_dir.path().join("archive").join("docs");
+    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+
+    let moved_guide = fs::read_to_string(target_dir.join("guide.md")).unwrap();
+    let moved_topic = fs::read_to_string(target_dir.join("nested").join("topic.md")).unwrap();
+    assert!(moved_guide.contains("nested/topic.md"));
+    assert!(moved_topic.contains("../guide.md"));
+}
+
+#[test]
+fn test_mv_directory_into_existing_directory_preserves_source_name() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_dir = temp_dir.path().join("docs");
+    write_file(source_dir.join("guide.md"), "# Guide");
+    let destination_parent = temp_dir.path().join("archive");
+    fs::create_dir_all(&destination_parent).unwrap();
+
+    mv_file(&source_dir, &destination_parent, temp_dir.path(), false).unwrap();
+
+    assert!(destination_parent.join("docs").join("guide.md").exists());
+    assert!(!source_dir.exists());
+}
+
+#[test]
+fn test_mv_directory_rejects_moving_into_own_subdirectory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_dir = temp_dir.path().join("docs");
+    write_file(source_dir.join("guide.md"), "# Guide");
+    let invalid_target = source_dir.join("nested").join("archive");
+
+    let result = mv_file(&source_dir, &invalid_target, temp_dir.path(), false);
+
+    assert!(result.is_err());
+    assert!(source_dir.join("guide.md").exists());
+}
+
 /// Move file to a target path with non-existent intermediate directories.
 #[test]
 fn test_mv_file_with_nonexistent_intermediate_path() {

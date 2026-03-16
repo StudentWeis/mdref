@@ -150,6 +150,38 @@ fn test_cli_mv_nonexistent_source() {
     assert!(stderr.contains("Error"));
 }
 
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_mv_directory_updates_references() {
+    let binary = binary_path();
+    if !binary.exists() {
+        return;
+    }
+
+    let temp_dir = TempDir::new().unwrap();
+    let source_dir = temp_dir.path().join("docs");
+    write_file(source_dir.join("guide.md"), "# Guide");
+    write_file(temp_dir.path().join("index.md"), "[Guide](docs/guide.md)");
+
+    let target_dir = temp_dir.path().join("archive");
+    let output = Command::new(&binary)
+        .args([
+            "mv",
+            source_dir.to_str().unwrap(),
+            target_dir.to_str().unwrap(),
+            "--root",
+            temp_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+
+    assert!(output.status.success());
+    assert!(target_dir.join("guide.md").exists());
+
+    let index_content = fs::read_to_string(temp_dir.path().join("index.md")).unwrap();
+    assert!(index_content.contains("archive/guide.md"));
+}
+
 // ============= rename command tests =============
 
 #[test]
