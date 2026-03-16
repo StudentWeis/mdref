@@ -273,10 +273,16 @@ fn test_find_links_external_urls_not_matched_as_file_refs() {
 
     let result = find_links(&temp_file).unwrap();
 
-    // External URLs should still be collected as links
+    // External URLs are filtered out and should not be collected as links
     let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    assert!(link_texts.contains(&"https://google.com"));
-    assert!(link_texts.contains(&"test_external_urls.md"));
+    assert!(
+        !link_texts.contains(&"https://google.com"),
+        "External URLs should be filtered out"
+    );
+    assert!(
+        link_texts.contains(&"test_external_urls.md"),
+        "Local links should be collected"
+    );
 }
 
 #[test]

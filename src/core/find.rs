@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+use super::util::{is_external_url, strip_anchor};
 use crate::{Reference, Result};
 
 /// Find all references to a given file within Markdown files in the specified root directory.
@@ -102,18 +103,6 @@ fn collect_links<'a>(
     }
 }
 
-/// Strip the anchor (fragment) from a link URL.
-/// For example, "file.md#section" becomes "file.md", and "#section" returns None.
-fn strip_anchor(link: &str) -> Option<&str> {
-    // Handle pure anchor links (e.g., "#section") - these are internal to the file
-    if link.starts_with('#') {
-        return None;
-    }
-
-    // Split on '#' and take the part before it
-    link.split('#').next()
-}
-
 /// Determine whether a markdown link (found in `file_path`) refers to `target_canonical`.
 ///
 /// - If `target_canonical` is `None`, this function returns `true` (used when simply collecting links).
@@ -123,6 +112,12 @@ fn strip_anchor(link: &str) -> Option<&str> {
 ///
 /// Returns `true` when the checks succeed; otherwise `false`.
 fn process_link(file_path: &Path, target_canonical: Option<&Path>, link: &str) -> bool {
+    // External URLs (https://, http://, ftp://, etc.) are not local file paths
+    // and should not be matched as file references.
+    if is_external_url(link) {
+        return false;
+    }
+
     // Strip anchor from link for file path resolution
     let link_without_anchor = match strip_anchor(link) {
         Some(l) => l,
@@ -202,27 +197,11 @@ mod tests {
     use super::*;
     use std::fs;
     use std::io::Write;
-
-    // Helper: create a temporary directory with test files
-    #[allow(clippy::unwrap_used)]
-    fn setup_test_dir(name: &str) -> String {
-        let dir = format!("test_core_find_{}", name);
-        if Path::new(&dir).exists() {
-            fs::remove_dir_all(&dir).ok();
-        }
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn teardown_test_dir(dir: &str) {
-        if Path::new(dir).exists() {
-            fs::remove_dir_all(dir).ok();
-        }
-    }
+    use tempfile::TempDir;
 
     #[allow(clippy::unwrap_used)]
-    fn write_file(path: &str, content: &str) {
-        if let Some(parent) = Path::new(path).parent() {
+    fn write_file(path: &Path, content: &str) {
+        if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).ok();
         }
         let mut file = fs::File::create(path).unwrap();
@@ -234,29 +213,26 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_link_relative_existing_file() {
-        let dir = setup_test_dir("resolve_rel");
-        let base = format!("{}/base.md", dir);
-        let target = format!("{}/target.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("target.md");
         write_file(&base, "");
         write_file(&target, "");
 
-        let result = resolve_link(Path::new(&base), Path::new("target.md"));
+        let result = resolve_link(&base, Path::new("target.md"));
         assert!(result.is_some());
         assert!(result.unwrap().ends_with("target.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
+    #[allow(clippy::unwrap_used)]
     fn test_resolve_link_relative_nonexistent_file() {
-        let dir = setup_test_dir("resolve_nonexist");
-        let base = format!("{}/base.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
         write_file(&base, "");
 
-        let result = resolve_link(Path::new(&base), Path::new("ghost.md"));
+        let result = resolve_link(&base, Path::new("ghost.md"));
         assert!(result.is_none());
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
@@ -277,16 +253,14 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_resolve_link_nested_relative() {
-        let dir = setup_test_dir("resolve_nested");
-        let base = format!("{}/sub/base.md", dir);
-        let target = format!("{}/target.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("sub").join("base.md");
+        let target = temp_dir.path().join("target.md");
         write_file(&base, "");
         write_file(&target, "");
 
-        let result = resolve_link(Path::new(&base), Path::new("../target.md"));
+        let result = resolve_link(&base, Path::new("../target.md"));
         assert!(result.is_some());
-
-        teardown_test_dir(&dir);
     }
 
     // ============= match_link_to_target tests =============
@@ -294,63 +268,54 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_match_link_to_target_file_match() {
-        let dir = setup_test_dir("match_file");
-        let file_path = format!("{}/file.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("file.md");
         write_file(&file_path, "");
 
-        let canonical = Path::new(&file_path).canonicalize().unwrap();
+        let canonical = file_path.canonicalize().unwrap();
         assert!(match_link_to_target(&canonical, &canonical));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_match_link_to_target_file_mismatch() {
-        let dir = setup_test_dir("match_mismatch");
-        let file_a = format!("{}/a.md", dir);
-        let file_b = format!("{}/b.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let file_a = temp_dir.path().join("a.md");
+        let file_b = temp_dir.path().join("b.md");
         write_file(&file_a, "");
         write_file(&file_b, "");
 
-        let canonical_a = Path::new(&file_a).canonicalize().unwrap();
-        let canonical_b = Path::new(&file_b).canonicalize().unwrap();
+        let canonical_a = file_a.canonicalize().unwrap();
+        let canonical_b = file_b.canonicalize().unwrap();
         assert!(!match_link_to_target(&canonical_a, &canonical_b));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_match_link_to_target_directory() {
-        let dir = setup_test_dir("match_dir");
-        let sub_file = format!("{}/sub/file.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let sub_file = temp_dir.path().join("sub").join("file.md");
         write_file(&sub_file, "");
 
-        let canonical_file = Path::new(&sub_file).canonicalize().unwrap();
-        let canonical_dir = Path::new(&dir).canonicalize().unwrap();
+        let canonical_file = sub_file.canonicalize().unwrap();
+        let canonical_dir = temp_dir.path().canonicalize().unwrap();
         assert!(match_link_to_target(&canonical_file, &canonical_dir));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_match_link_to_target_outside_directory() {
-        let dir = setup_test_dir("match_outside");
-        let inside = format!("{}/inside.md", dir);
-        write_file(&inside, "");
+        let temp_dir = TempDir::new().unwrap();
+        let other_temp_dir = TempDir::new().unwrap();
 
-        let other_dir = setup_test_dir("match_outside_other");
-        let outside = format!("{}/outside.md", other_dir);
+        let inside = temp_dir.path().join("inside.md");
+        let outside = other_temp_dir.path().join("outside.md");
+        write_file(&inside, "");
         write_file(&outside, "");
 
-        let canonical_outside = Path::new(&outside).canonicalize().unwrap();
-        let canonical_dir = Path::new(&dir).canonicalize().unwrap();
+        let canonical_outside = outside.canonicalize().unwrap();
+        let canonical_dir = temp_dir.path().canonicalize().unwrap();
         assert!(!match_link_to_target(&canonical_outside, &canonical_dir));
-
-        teardown_test_dir(&dir);
-        teardown_test_dir(&other_dir);
     }
 
     // ============= process_link tests =============
@@ -358,7 +323,8 @@ mod tests {
     #[test]
     fn test_process_link_no_target_accepts_all() {
         assert!(process_link(Path::new("any.md"), None, "anything"));
-        assert!(process_link(
+        // Note: External URLs are filtered out even when no target specified
+        assert!(!process_link(
             Path::new("any.md"),
             None,
             "https://example.com"
@@ -368,58 +334,64 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_process_link_filename_mismatch_early_return() {
-        let dir = setup_test_dir("proc_mismatch");
-        let target = format!("{}/target.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let target = temp_dir.path().join("target.md");
         write_file(&target, "");
 
-        let canonical = Path::new(&target).canonicalize().unwrap();
+        let canonical = target.canonicalize().unwrap();
         // Link has a different filename, should return false early
         assert!(!process_link(
-            Path::new(&format!("{}/base.md", dir)),
+            &temp_dir.path().join("base.md"),
             Some(&canonical),
             "other.md"
         ));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_process_link_matching_link() {
-        let dir = setup_test_dir("proc_match");
-        let base = format!("{}/base.md", dir);
-        let target = format!("{}/target.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("target.md");
         write_file(&base, "");
         write_file(&target, "");
 
-        let canonical = Path::new(&target).canonicalize().unwrap();
-        assert!(process_link(
-            Path::new(&base),
-            Some(&canonical),
-            "target.md"
-        ));
-
-        teardown_test_dir(&dir);
+        let canonical = target.canonicalize().unwrap();
+        assert!(process_link(&base, Some(&canonical), "target.md"));
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_process_link_unresolvable_link() {
-        let dir = setup_test_dir("proc_unresolvable");
-        let base = format!("{}/base.md", dir);
-        let target = format!("{}/target.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("target.md");
         write_file(&base, "");
         write_file(&target, "");
 
-        let canonical = Path::new(&target).canonicalize().unwrap();
+        let canonical = target.canonicalize().unwrap();
         // Link points to a file that doesn't exist
-        assert!(!process_link(
-            Path::new(&base),
-            Some(&canonical),
-            "nonexistent.md"
-        ));
+        assert!(!process_link(&base, Some(&canonical), "nonexistent.md"));
+    }
 
-        teardown_test_dir(&dir);
+    #[test]
+    fn test_process_link_filters_external_url() {
+        // External URLs should be filtered out regardless of target
+        assert!(!process_link(
+            Path::new("any.md"),
+            None,
+            "https://google.com"
+        ));
+        assert!(!process_link(
+            Path::new("any.md"),
+            None,
+            "http://example.com"
+        ));
+        assert!(!process_link(
+            Path::new("any.md"),
+            None,
+            "ftp://files.example.com/doc.md"
+        ));
     }
 
     // ============= process_md_file tests =============
@@ -477,13 +449,13 @@ mod tests {
     }
 
     #[test]
-    fn test_process_md_file_external_urls() {
+    fn test_process_md_file_external_urls_filtered() {
+        // External URLs should be filtered out and not included in results
         let content = "[Google](https://google.com)\n[GitHub](https://github.com)";
         let results = process_md_file(content, Path::new("test.md"), None);
 
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].link_text, "https://google.com");
-        assert_eq!(results[1].link_text, "https://github.com");
+        // External URLs are now filtered out
+        assert!(results.is_empty(), "External URLs should be filtered out");
     }
 
     #[test]
@@ -496,5 +468,18 @@ mod tests {
         assert!(link_texts.contains(&"file.md"));
         assert!(link_texts.contains(&"pic.png"));
         assert!(link_texts.contains(&"other.md"));
+    }
+
+    #[test]
+    fn test_process_md_file_pure_anchor_filtered() {
+        // Pure anchor links should be filtered out
+        let content = "[Section](#section)\n[TOC](#table-of-contents)";
+        let results = process_md_file(content, Path::new("test.md"), None);
+
+        // Pure anchor links are filtered out
+        assert!(
+            results.is_empty(),
+            "Pure anchor links should be filtered out"
+        );
     }
 }

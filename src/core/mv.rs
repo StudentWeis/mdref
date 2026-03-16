@@ -3,8 +3,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::model::{LinkReplacement, MoveTransaction};
+use super::util::{is_external_url, relative_path};
 use crate::{MdrefError, Reference, Result, find_links, find_references};
-use pathdiff::diff_paths;
 
 // LinkReplacement and MoveTransaction are now defined in the model module
 
@@ -312,11 +312,6 @@ fn print_dry_run_report(
     }
 }
 
-/// Check whether a link text represents an external URL (e.g. https://, http://, ftp://).
-fn is_external_url(link: &str) -> bool {
-    link.contains("://")
-}
-
 /// Split a link into the path part and the anchor (fragment) part.
 /// Returns (path, Some(anchor)) if there's an anchor, or (path, None) if not.
 /// Examples:
@@ -473,65 +468,6 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
     Ok(())
 }
 
-/// Compute the relative path from one file to another.
-/// Handles the case where either path may not exist yet (e.g. during dry-run)
-/// by canonicalizing parent directories when possible and falling back to raw paths.
-fn relative_path(from: &Path, to: &Path) -> Result<PathBuf> {
-    let to_resolved = resolve_path(to)?;
-    let from_parent = from
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
-    let from_resolved = if from_parent.exists() {
-        from_parent.canonicalize()?
-    } else {
-        resolve_parent(from_parent)?
-    };
-    Ok(diff_paths(to_resolved, from_resolved).unwrap_or_default())
-}
-
-/// Resolve a path to its canonical form, handling non-existent files
-/// by canonicalizing the nearest existing ancestor and joining the rest.
-fn resolve_path(path: &Path) -> Result<PathBuf> {
-    if path.exists() {
-        return Ok(path.canonicalize()?);
-    }
-    let parent = path
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
-    let filename = path
-        .file_name()
-        .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
-    let parent_resolved = if parent.exists() {
-        parent.canonicalize()?
-    } else {
-        resolve_parent(parent)?
-    };
-    Ok(parent_resolved.join(filename))
-}
-
-/// Resolve a directory path by canonicalizing the nearest existing ancestor
-/// and joining the remaining non-existent components.
-fn resolve_parent(dir: &Path) -> Result<PathBuf> {
-    let mut components_to_append = Vec::new();
-    let mut current = dir;
-    loop {
-        if current.exists() {
-            let mut resolved = current.canonicalize()?;
-            for component in components_to_append.into_iter().rev() {
-                resolved.push(component);
-            }
-            return Ok(resolved);
-        }
-        if let Some(file_name) = current.file_name() {
-            components_to_append.push(file_name.to_owned());
-        }
-        match current.parent() {
-            Some(parent) => current = parent,
-            None => return Ok(dir.to_path_buf()),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -545,72 +481,6 @@ mod tests {
         }
         let mut file = fs::File::create(path).unwrap();
         file.write_all(content.as_bytes()).unwrap();
-    }
-
-    // ============= relative_path tests =============
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn test_relative_path_same_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let from = temp_dir.path().join("from.md");
-        let to = temp_dir.path().join("to.md");
-        write_file(from.to_str().unwrap(), "");
-        write_file(to.to_str().unwrap(), "");
-
-        let result = relative_path(&from, &to).unwrap();
-        assert_eq!(result, PathBuf::from("to.md"));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn test_relative_path_parent_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let from = temp_dir.path().join("sub").join("from.md");
-        let to = temp_dir.path().join("to.md");
-        write_file(from.to_str().unwrap(), "");
-        write_file(to.to_str().unwrap(), "");
-
-        let result = relative_path(&from, &to).unwrap();
-        assert_eq!(result, PathBuf::from("../to.md"));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn test_relative_path_child_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let from = temp_dir.path().join("from.md");
-        let to = temp_dir.path().join("sub").join("to.md");
-        write_file(from.to_str().unwrap(), "");
-        write_file(to.to_str().unwrap(), "");
-
-        let result = relative_path(&from, &to).unwrap();
-        assert_eq!(result, PathBuf::from("sub/to.md"));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn test_relative_path_deep_cross_directory() {
-        let temp_dir = TempDir::new().unwrap();
-        let from = temp_dir.path().join("a").join("b").join("from.md");
-        let to = temp_dir.path().join("x").join("y").join("to.md");
-        write_file(from.to_str().unwrap(), "");
-        write_file(to.to_str().unwrap(), "");
-
-        let result = relative_path(&from, &to).unwrap();
-        assert_eq!(result, PathBuf::from("../../x/y/to.md"));
-    }
-
-    #[test]
-    #[allow(clippy::unwrap_used)]
-    fn test_relative_path_nonexistent_target() {
-        let temp_dir = TempDir::new().unwrap();
-        let from = temp_dir.path().join("from.md");
-        write_file(from.to_str().unwrap(), "");
-
-        let ghost = temp_dir.path().join("ghost.md");
-        let result = relative_path(&from, &ghost).unwrap();
-        assert_eq!(result, PathBuf::from("ghost.md"));
     }
 
     // ============= apply_replacements tests =============
@@ -837,35 +707,6 @@ mod tests {
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("sub/new_target.md"));
-    }
-
-    // ============= is_external_url tests =============
-
-    #[test]
-    fn test_is_external_url_https() {
-        assert!(is_external_url("https://google.com"));
-        assert!(is_external_url("https://github.com/user/repo"));
-    }
-
-    #[test]
-    fn test_is_external_url_http() {
-        assert!(is_external_url("http://example.com"));
-        assert!(is_external_url("http://localhost:8080/path"));
-    }
-
-    #[test]
-    fn test_is_external_url_other_protocols() {
-        assert!(is_external_url("ftp://files.example.com/doc.md"));
-        assert!(is_external_url("mailto://user@example.com"));
-    }
-
-    #[test]
-    fn test_is_external_url_local_paths() {
-        assert!(!is_external_url("local.md"));
-        assert!(!is_external_url("sub/dir/file.md"));
-        assert!(!is_external_url("../parent/file.md"));
-        assert!(!is_external_url("./relative.md"));
-        assert!(!is_external_url("image.png"));
     }
 
     // ============= build_link_replacement with external URL =============
