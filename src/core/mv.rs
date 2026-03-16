@@ -247,22 +247,7 @@ fn relative_path(from: &Path, to: &Path) -> Result<PathBuf> {
 mod tests {
     use super::*;
     use std::io::Write;
-
-    #[allow(clippy::unwrap_used)]
-    fn setup_test_dir(name: &str) -> String {
-        let dir = format!("test_core_mv_{}", name);
-        if Path::new(&dir).exists() {
-            fs::remove_dir_all(&dir).ok();
-        }
-        fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
-    fn teardown_test_dir(dir: &str) {
-        if Path::new(dir).exists() {
-            fs::remove_dir_all(dir).ok();
-        }
-    }
+    use tempfile::TempDir;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &str, content: &str) {
@@ -278,73 +263,64 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_relative_path_same_directory() {
-        let dir = setup_test_dir("rel_same");
-        let from = format!("{}/from.md", dir);
-        let to = format!("{}/to.md", dir);
-        write_file(&from, "");
-        write_file(&to, "");
+        let temp_dir = TempDir::new().unwrap();
+        let from = temp_dir.path().join("from.md");
+        let to = temp_dir.path().join("to.md");
+        write_file(from.to_str().unwrap(), "");
+        write_file(to.to_str().unwrap(), "");
 
-        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        let result = relative_path(&from, &to).unwrap();
         assert_eq!(result, PathBuf::from("to.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_relative_path_parent_directory() {
-        let dir = setup_test_dir("rel_parent");
-        let from = format!("{}/sub/from.md", dir);
-        let to = format!("{}/to.md", dir);
-        write_file(&from, "");
-        write_file(&to, "");
+        let temp_dir = TempDir::new().unwrap();
+        let from = temp_dir.path().join("sub").join("from.md");
+        let to = temp_dir.path().join("to.md");
+        write_file(from.to_str().unwrap(), "");
+        write_file(to.to_str().unwrap(), "");
 
-        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        let result = relative_path(&from, &to).unwrap();
         assert_eq!(result, PathBuf::from("../to.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_relative_path_child_directory() {
-        let dir = setup_test_dir("rel_child");
-        let from = format!("{}/from.md", dir);
-        let to = format!("{}/sub/to.md", dir);
-        write_file(&from, "");
-        write_file(&to, "");
+        let temp_dir = TempDir::new().unwrap();
+        let from = temp_dir.path().join("from.md");
+        let to = temp_dir.path().join("sub").join("to.md");
+        write_file(from.to_str().unwrap(), "");
+        write_file(to.to_str().unwrap(), "");
 
-        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        let result = relative_path(&from, &to).unwrap();
         assert_eq!(result, PathBuf::from("sub/to.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_relative_path_deep_cross_directory() {
-        let dir = setup_test_dir("rel_deep");
-        let from = format!("{}/a/b/from.md", dir);
-        let to = format!("{}/x/y/to.md", dir);
-        write_file(&from, "");
-        write_file(&to, "");
+        let temp_dir = TempDir::new().unwrap();
+        let from = temp_dir.path().join("a").join("b").join("from.md");
+        let to = temp_dir.path().join("x").join("y").join("to.md");
+        write_file(from.to_str().unwrap(), "");
+        write_file(to.to_str().unwrap(), "");
 
-        let result = relative_path(Path::new(&from), Path::new(&to)).unwrap();
+        let result = relative_path(&from, &to).unwrap();
         assert_eq!(result, PathBuf::from("../../x/y/to.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     fn test_relative_path_nonexistent_target() {
-        let dir = setup_test_dir("rel_nonexist");
-        let from = format!("{}/from.md", dir);
-        write_file(&from, "");
+        let temp_dir = TempDir::new().unwrap();
+        let from = temp_dir.path().join("from.md");
+        write_file(from.to_str().unwrap(), "");
 
-        let result = relative_path(Path::new(&from), Path::new(&format!("{}/ghost.md", dir)));
+        let ghost = temp_dir.path().join("ghost.md");
+        let result = relative_path(&from, &ghost);
         assert!(result.is_err());
-
-        teardown_test_dir(&dir);
     }
 
     // ============= apply_replacements tests =============
@@ -352,9 +328,9 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_apply_replacements_basic() {
-        let dir = setup_test_dir("replace_basic");
-        let file_path = format!("{}/doc.md", dir);
-        write_file(&file_path, "[Link](old.md)");
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(file_path.to_str().unwrap(), "[Link](old.md)");
 
         let replacements = vec![LinkReplacement {
             line: 1,
@@ -363,22 +339,20 @@ mod tests {
             new_pattern: "](new.md)".to_string(),
         }];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](new.md)"));
         assert!(!content.contains("](old.md)"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_apply_replacements_preserves_other_content() {
-        let dir = setup_test_dir("replace_preserve");
-        let file_path = format!("{}/doc.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
         write_file(
-            &file_path,
+            file_path.to_str().unwrap(),
             "# Title\n\nSome text [Link](old.md) more text.\n\nAnother paragraph.",
         );
 
@@ -389,22 +363,20 @@ mod tests {
             new_pattern: "](new.md)".to_string(),
         }];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("# Title"));
         assert!(content.contains("Some text [Link](new.md) more text."));
         assert!(content.contains("Another paragraph."));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_apply_replacements_line_out_of_range() {
-        let dir = setup_test_dir("replace_oor");
-        let file_path = format!("{}/doc.md", dir);
-        write_file(&file_path, "Single line");
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(file_path.to_str().unwrap(), "Single line");
 
         let replacements = vec![LinkReplacement {
             line: 999,
@@ -413,18 +385,16 @@ mod tests {
             new_pattern: "](new.md)".to_string(),
         }];
 
-        let result = apply_replacements(Path::new(&file_path), &replacements);
+        let result = apply_replacements(&file_path, &replacements);
         assert!(result.is_err());
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_apply_replacements_with_subdirectory_path() {
-        let dir = setup_test_dir("replace_subdir");
-        let file_path = format!("{}/doc.md", dir);
-        write_file(&file_path, "[Link](sub/old.md)");
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(file_path.to_str().unwrap(), "[Link](sub/old.md)");
 
         let replacements = vec![LinkReplacement {
             line: 1,
@@ -433,12 +403,10 @@ mod tests {
             new_pattern: "](other/new.md)".to_string(),
         }];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](other/new.md)"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
@@ -446,9 +414,9 @@ mod tests {
     fn test_apply_replacements_only_replaces_target_link() {
         // Verify that when two identical links exist on the same line,
         // only the one at the specified column is replaced.
-        let dir = setup_test_dir("replace_substring_issue");
-        let file_path = format!("{}/doc.md", dir);
-        write_file(&file_path, "[A](doc.md) and [B](doc.md)");
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(file_path.to_str().unwrap(), "[A](doc.md) and [B](doc.md)");
 
         let replacements = vec![LinkReplacement {
             line: 1,
@@ -457,7 +425,7 @@ mod tests {
             new_pattern: "](new.md)".to_string(),
         }];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(
@@ -470,8 +438,6 @@ mod tests {
             "Bug: [B](doc.md) was incorrectly modified. Content: {}",
             content
         );
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
@@ -479,10 +445,10 @@ mod tests {
     fn test_apply_replacements_multiple_in_same_file() {
         // Verify that multiple replacements in the same file are applied correctly
         // in a single read-write cycle.
-        let dir = setup_test_dir("replace_multi");
-        let file_path = format!("{}/doc.md", dir);
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
         write_file(
-            &file_path,
+            file_path.to_str().unwrap(),
             "[Link1](old.md)\n\n[Link2](old.md)\n\n[Link3](old.md)",
         );
 
@@ -507,21 +473,19 @@ mod tests {
             },
         ];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(!content.contains("](old.md)"));
         assert_eq!(content.matches("](new.md)").count(), 3);
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_apply_replacements_preserves_trailing_newline() {
-        let dir = setup_test_dir("replace_trailing_nl");
-        let file_path = format!("{}/doc.md", dir);
-        write_file(&file_path, "[Link](old.md)\n");
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(file_path.to_str().unwrap(), "[Link](old.md)\n");
 
         let replacements = vec![LinkReplacement {
             line: 1,
@@ -530,13 +494,11 @@ mod tests {
             new_pattern: "](new.md)".to_string(),
         }];
 
-        apply_replacements(Path::new(&file_path), &replacements).unwrap();
+        apply_replacements(&file_path, &replacements).unwrap();
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("](new.md)"));
         assert!(content.ends_with('\n'), "Trailing newline was lost");
-
-        teardown_test_dir(&dir);
     }
 
     // ============= update via relative_path + apply_replacements tests =============
@@ -544,13 +506,13 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_update_reference_same_directory() {
-        let dir = setup_test_dir("upd_ref_same");
-        let ref_file = format!("{}/ref.md", dir);
-        let new_target = format!("{}/new_target.md", dir);
-        write_file(&ref_file, "[Link](old_target.md)");
-        write_file(&new_target, "");
+        let temp_dir = TempDir::new().unwrap();
+        let ref_file = temp_dir.path().join("ref.md");
+        let new_target = temp_dir.path().join("new_target.md");
+        write_file(ref_file.to_str().unwrap(), "[Link](old_target.md)");
+        write_file(new_target.to_str().unwrap(), "");
 
-        let new_link_path = relative_path(Path::new(&ref_file), Path::new(&new_target)).unwrap();
+        let new_link_path = relative_path(&ref_file, &new_target).unwrap();
         let replacements = vec![LinkReplacement {
             line: 1,
             column: 1,
@@ -558,24 +520,22 @@ mod tests {
             new_pattern: format!("]({})", new_link_path.display()),
         }];
 
-        apply_replacements(Path::new(&ref_file), &replacements).unwrap();
+        apply_replacements(&ref_file, &replacements).unwrap();
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("new_target.md"));
-
-        teardown_test_dir(&dir);
     }
 
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_update_reference_cross_directory() {
-        let dir = setup_test_dir("upd_ref_cross");
-        let ref_file = format!("{}/ref.md", dir);
-        let new_target = format!("{}/sub/new_target.md", dir);
-        write_file(&ref_file, "[Link](old.md)");
-        write_file(&new_target, "");
+        let temp_dir = TempDir::new().unwrap();
+        let ref_file = temp_dir.path().join("ref.md");
+        let new_target = temp_dir.path().join("sub").join("new_target.md");
+        write_file(ref_file.to_str().unwrap(), "[Link](old.md)");
+        write_file(new_target.to_str().unwrap(), "");
 
-        let new_link_path = relative_path(Path::new(&ref_file), Path::new(&new_target)).unwrap();
+        let new_link_path = relative_path(&ref_file, &new_target).unwrap();
         let replacements = vec![LinkReplacement {
             line: 1,
             column: 1,
@@ -583,12 +543,10 @@ mod tests {
             new_pattern: format!("]({})", new_link_path.display()),
         }];
 
-        apply_replacements(Path::new(&ref_file), &replacements).unwrap();
+        apply_replacements(&ref_file, &replacements).unwrap();
 
         let content = fs::read_to_string(&ref_file).unwrap();
         assert!(content.contains("sub/new_target.md"));
-
-        teardown_test_dir(&dir);
     }
 
     // ============= is_external_url tests =============
@@ -680,28 +638,20 @@ mod tests {
     #[test]
     #[allow(clippy::unwrap_used)]
     fn test_build_link_replacement_skips_external_url() {
-        let dir = setup_test_dir("upd_link_ext");
-        let source = format!("{}/source.md", dir);
-        let target = format!("{}/target.md", dir);
-        write_file(&source, "[Google](https://google.com)");
-        write_file(&target, "[Google](https://google.com)");
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let target = temp_dir.path().join("target.md");
+        write_file(source.to_str().unwrap(), "[Google](https://google.com)");
+        write_file(target.to_str().unwrap(), "[Google](https://google.com)");
 
-        let reference = Reference::new(
-            PathBuf::from(&target),
-            1,
-            1,
-            "https://google.com".to_string(),
-        );
+        let reference = Reference::new(target.clone(), 1, 1, "https://google.com".to_string());
 
         // Should return None — external URL is skipped
-        let result =
-            build_link_replacement(&reference, Path::new(&source), Path::new(&target)).unwrap();
+        let result = build_link_replacement(&reference, &source, &target).unwrap();
         assert!(result.is_none());
 
         // Content should remain unchanged
         let content = fs::read_to_string(&target).unwrap();
         assert!(content.contains("https://google.com"));
-
-        teardown_test_dir(&dir);
     }
 }
