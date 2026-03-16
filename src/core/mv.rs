@@ -13,9 +13,270 @@ struct LinkReplacement {
     new_pattern: String,
 }
 
-/// Move references from the old file path to the new file path within Markdown files in the specified root directory.
-/// This function finds all references to the old file and updates them to point to the new file.
-/// Moreover, it updates links within the moved file itself to ensure they remain valid.
+// ============= Transaction support =============
+
+/// Tracks all filesystem mutations so they can be rolled back on failure.
+///
+/// The transaction records three kinds of operations:
+/// 1. **File snapshots** – original content of files that will be modified in-place.
+/// 2. **Copied destination** – the new file created by `fs::copy`.
+/// 3. **Removed source** – set after the original file is deleted, so rollback can restore it.
+struct MoveTransaction {
+    file_snapshots: HashMap<PathBuf, String>,
+    copied_destination: Option<PathBuf>,
+    source_removed: bool,
+    source_path: PathBuf,
+    destination_path: PathBuf,
+}
+
+impl MoveTransaction {
+    fn new(source_path: PathBuf, destination_path: PathBuf) -> Self {
+        Self {
+            file_snapshots: HashMap::new(),
+            copied_destination: None,
+            source_removed: false,
+            source_path,
+            destination_path,
+        }
+    }
+
+    /// Snapshot a file's current content before modifying it.
+    fn snapshot_file(&mut self, path: &Path) -> Result<()> {
+        if !self.file_snapshots.contains_key(path) {
+            let content = fs::read_to_string(path)?;
+            self.file_snapshots.insert(path.to_path_buf(), content);
+        }
+        Ok(())
+    }
+
+    /// Record that the destination file was created via copy.
+    fn mark_copied(&mut self) {
+        self.copied_destination = Some(self.destination_path.clone());
+    }
+
+    /// Record that the source file has been removed.
+    fn mark_source_removed(&mut self) {
+        self.source_removed = true;
+    }
+
+    /// Undo all recorded mutations, returning any errors encountered during rollback.
+    fn rollback(&self) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        // 1. Restore all modified files to their original content.
+        for (path, original_content) in &self.file_snapshots {
+            if let Err(err) = fs::write(path, original_content) {
+                errors.push(format!("Failed to restore {}: {}", path.display(), err));
+            }
+        }
+
+        // 2. If the source was deleted, restore it from the destination copy.
+        if self.source_removed
+            && let Some(dest) = &self.copied_destination
+            && dest.exists()
+            && let Err(err) = fs::copy(dest, &self.source_path)
+        {
+            errors.push(format!(
+                "Failed to restore source {} from {}: {}",
+                self.source_path.display(),
+                dest.display(),
+                err
+            ));
+        }
+
+        // 3. Remove the destination file that was created by copy.
+        if let Some(dest) = &self.copied_destination
+            && dest.exists()
+            && let Err(err) = fs::remove_file(dest)
+        {
+            errors.push(format!(
+                "Failed to remove copied destination {}: {}",
+                dest.display(),
+                err
+            ));
+        }
+
+        errors
+    }
+}
+
+/// Execute a fallible closure within a transaction context.
+/// If the closure returns an error, the transaction is rolled back automatically.
+fn execute_with_rollback<F>(transaction: &MoveTransaction, operation: F) -> Result<()>
+where
+    F: FnOnce() -> Result<()>,
+{
+    match operation() {
+        Ok(()) => Ok(()),
+        Err(original_error) => {
+            let rollback_errors = transaction.rollback();
+            if rollback_errors.is_empty() {
+                Err(original_error)
+            } else {
+                Err(MdrefError::RollbackFailed {
+                    original_error: original_error.to_string(),
+                    rollback_errors,
+                })
+            }
+        }
+    }
+}
+
+// ============= Path resolution =============
+
+/// Resolve the destination path, handling the case where the destination is an existing directory.
+fn resolve_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
+    if destination.is_dir() {
+        let filename = source.file_name().ok_or_else(|| {
+            MdrefError::Path(format!("Source path has no filename: {}", source.display()))
+        })?;
+        Ok(destination.join(filename))
+    } else {
+        Ok(destination.to_path_buf())
+    }
+}
+
+/// Canonicalize a destination path, handling the case where it doesn't exist yet.
+fn canonicalize_destination(destination: &Path) -> Result<PathBuf> {
+    if destination.exists() {
+        return destination.canonicalize().map_err(|e| {
+            MdrefError::Path(format!(
+                "Cannot canonicalize destination path '{}': {}",
+                destination.display(),
+                e
+            ))
+        });
+    }
+
+    let parent = destination.parent().ok_or_else(|| {
+        MdrefError::Path(format!(
+            "Destination path has no parent directory: {}",
+            destination.display()
+        ))
+    })?;
+
+    let parent_canonical = if parent.exists() {
+        parent.canonicalize().map_err(|e| {
+            MdrefError::Path(format!(
+                "Cannot canonicalize parent directory '{}': {}",
+                parent.display(),
+                e
+            ))
+        })?
+    } else {
+        parent.to_path_buf()
+    };
+
+    let filename = destination.file_name().ok_or_else(|| {
+        MdrefError::Path(format!(
+            "Destination path has no filename: {}",
+            destination.display()
+        ))
+    })?;
+
+    Ok(parent_canonical.join(filename))
+}
+
+/// Validate that the move operation is valid: source exists, destination doesn't collide, etc.
+/// Returns `(resolved_dest, source_canonical, dest_canonical)`.
+fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, PathBuf, PathBuf)> {
+    if !source.exists() {
+        return Err(MdrefError::Path(format!(
+            "Source file does not exist: {}",
+            source.display()
+        )));
+    }
+
+    let source_canonical = source.canonicalize().map_err(|e| {
+        MdrefError::Path(format!(
+            "Cannot canonicalize source path '{}': {}",
+            source.display(),
+            e
+        ))
+    })?;
+
+    let resolved_dest = resolve_destination(source, destination)?;
+    let dest_canonical = canonicalize_destination(&resolved_dest)?;
+
+    if source_canonical == dest_canonical {
+        return Err(MdrefError::Path(
+            "Source and destination resolve to the same file".to_string(),
+        ));
+    }
+
+    if resolved_dest.exists() {
+        return Err(MdrefError::Path(format!(
+            "Destination file already exists: {}",
+            resolved_dest.display()
+        )));
+    }
+
+    Ok((resolved_dest, source_canonical, dest_canonical))
+}
+
+// ============= Replacement planning =============
+
+/// Collect all link replacements needed for external references (other files pointing to the moved file).
+fn plan_external_replacements(
+    references: &[Reference],
+    resolved_dest: &Path,
+) -> Result<HashMap<PathBuf, Vec<LinkReplacement>>> {
+    let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
+
+    for reference in references {
+        let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
+        let new_link_path = relative_path(&reference.path, resolved_dest)?;
+
+        let new_link_with_anchor = match anchor {
+            Some(a) => format!("{}#{}", new_link_path.display(), a),
+            None => new_link_path.display().to_string(),
+        };
+
+        let old_pattern = format!("]({})", reference.link_text);
+        let new_pattern = format!("]({})", new_link_with_anchor);
+
+        replacements_by_file
+            .entry(reference.path.clone())
+            .or_default()
+            .push(LinkReplacement {
+                line: reference.line,
+                column: reference.column,
+                old_pattern,
+                new_pattern,
+            });
+    }
+
+    Ok(replacements_by_file)
+}
+
+/// Collect all link replacements needed for internal links within the moved file itself.
+fn plan_internal_replacements(
+    scan_path: &Path,
+    raw_file_path: &Path,
+    resolved_dest: &Path,
+) -> Result<Vec<LinkReplacement>> {
+    let links = find_links(scan_path)?;
+    let mut replacements = Vec::new();
+
+    for link in &links {
+        if let Some(replacement) = build_link_replacement(link, raw_file_path, resolved_dest)? {
+            replacements.push(replacement);
+        }
+    }
+
+    Ok(replacements)
+}
+
+// ============= Public API =============
+
+/// Move a Markdown file and atomically update all references across the project.
+///
+/// This function finds all references to the source file and updates them to point to the
+/// new location. It also updates links within the moved file itself to ensure they remain valid.
+///
+/// **Atomicity guarantee**: all filesystem mutations are tracked in a transaction. If any step
+/// fails, all changes are rolled back — modified files are restored to their original content,
+/// the copied destination is removed, and the deleted source is recovered.
 ///
 /// When `dry_run` is `true`, no files are created, moved, or modified. Instead, the function
 /// prints all changes that *would* be made, allowing the user to preview the operation.
@@ -37,173 +298,75 @@ where
     let new_file_path = new_file_path.as_ref();
     let root_dir = root_dir.as_ref();
 
-    // Check if source file exists before proceeding.
-    if !raw_file_path.exists() {
-        return Err(MdrefError::Path(format!(
-            "Source file does not exist: {}",
-            raw_file_path.display()
-        )));
-    }
-
-    // Use canonicalize to reliably detect if source and destination point to the same file.
-    // This handles cases like: "file.md" vs "./file.md", relative vs absolute paths, symlinks, etc.
-    let raw_canonical = raw_file_path.canonicalize().map_err(|e| {
-        MdrefError::Path(format!(
-            "Cannot canonicalize source path '{}': {}",
-            raw_file_path.display(),
-            e
-        ))
-    })?;
-
-    // If destination is an existing directory, join with the source filename.
-    let resolved_dest = if new_file_path.is_dir() {
-        let filename = raw_file_path.file_name().ok_or_else(|| {
-            MdrefError::Path(format!(
-                "Source path has no filename: {}",
-                raw_file_path.display()
-            ))
-        })?;
-        new_file_path.join(filename)
-    } else {
-        new_file_path.to_path_buf()
-    };
-
-    // For destination, canonicalize parent directory and join with filename
-    // to handle cases where destination doesn't exist yet.
-    let new_canonical = if resolved_dest.exists() {
-        resolved_dest.canonicalize().map_err(|e| {
-            MdrefError::Path(format!(
-                "Cannot canonicalize destination path '{}': {}",
-                resolved_dest.display(),
-                e
-            ))
-        })?
-    } else {
-        // If destination doesn't exist, resolve relative to its parent directory
-        let parent = resolved_dest.parent().ok_or_else(|| {
-            MdrefError::Path(format!(
-                "Destination path has no parent directory: {}",
-                resolved_dest.display()
-            ))
-        })?;
-
-        // Canonicalize parent (it may or may not exist)
-        let parent_canonical = if parent.exists() {
-            parent.canonicalize().map_err(|e| {
-                MdrefError::Path(format!(
-                    "Cannot canonicalize parent directory '{}': {}",
-                    parent.display(),
-                    e
-                ))
-            })?
-        } else {
-            parent.to_path_buf()
+    let (resolved_dest, _source_canonical, _dest_canonical) =
+        match validate_move_paths(raw_file_path, new_file_path) {
+            Ok(paths) => paths,
+            Err(e) => {
+                // Special case: source == destination is a no-op, not an error.
+                if e.to_string().contains("resolve to the same file") {
+                    return Ok(());
+                }
+                return Err(e);
+            }
         };
 
-        let filename = resolved_dest.file_name().ok_or_else(|| {
-            MdrefError::Path(format!(
-                "Destination path has no filename: {}",
-                resolved_dest.display()
-            ))
-        })?;
-        parent_canonical.join(filename)
-    };
-
-    // If source and destination resolve to the same file, nothing to do.
-    if raw_canonical == new_canonical {
-        return Ok(());
-    }
-
-    // Check if destination file already exists to prevent accidental overwrite.
-    // This check is done after canonicalize comparison to handle the case where
-    // source and destination are the same file with different path representations.
-    if resolved_dest.exists() {
-        return Err(MdrefError::Path(format!(
-            "Destination file already exists: {}",
-            resolved_dest.display()
-        )));
-    }
-
-    if !dry_run {
-        // Ensure the parent directory of the new file path exists.
-        if let Some(parent) = resolved_dest.parent() {
-            fs::create_dir_all(parent)?;
-        }
-    }
-
-    // Find all references to the old file path within the specified root directory.
+    // Phase 1: Plan — pure computation, no side effects.
     let references = find_references(raw_file_path, root_dir)?;
-
-    if !dry_run {
-        // Copy the original file to the resolved destination path.
-        // We copy first to avoid data loss in case of errors during reference updates.
-        fs::copy(raw_file_path, &resolved_dest)?;
-    }
-
-    // Collect all reference replacements, grouped by file path.
-    let mut replacements_by_file: HashMap<PathBuf, Vec<LinkReplacement>> = HashMap::new();
-
-    for reference in &references {
-        // Extract the anchor from the link text (if any) to preserve it
-        let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
-
-        let new_link_path = relative_path(&reference.path, &resolved_dest)?;
-
-        // Reconstruct the new pattern with anchor preserved
-        let new_link_with_anchor = match anchor {
-            Some(a) => format!("{}#{}", new_link_path.display(), a),
-            None => new_link_path.display().to_string(),
-        };
-
-        let old_pattern = format!("]({})", reference.link_text);
-        let new_pattern = format!("]({})", new_link_with_anchor);
-        replacements_by_file
-            .entry(reference.path.clone())
-            .or_default()
-            .push(LinkReplacement {
-                line: reference.line,
-                column: reference.column,
-                old_pattern,
-                new_pattern,
-            });
-    }
+    let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
 
     if dry_run {
-        // In dry-run mode, compute internal link replacements from the source file
-        // (since the file has not actually been copied to the new location).
-        let links = find_links(raw_file_path)?;
-        for link in &links {
-            if let Some(replacement) = build_link_replacement(link, raw_file_path, &resolved_dest)?
-            {
-                replacements_by_file
-                    .entry(resolved_dest.clone())
-                    .or_default()
-                    .push(replacement);
-            }
+        let internal_replacements =
+            plan_internal_replacements(raw_file_path, raw_file_path, &resolved_dest)?;
+        if !internal_replacements.is_empty() {
+            replacements_by_file
+                .entry(resolved_dest.clone())
+                .or_default()
+                .extend(internal_replacements);
         }
-
         print_dry_run_report(raw_file_path, &resolved_dest, &replacements_by_file);
         return Ok(());
     }
 
-    // Collect all link replacements for the moved file itself.
-    let links = find_links(&resolved_dest)?;
-    for link in &links {
-        if let Some(replacement) = build_link_replacement(link, raw_file_path, &resolved_dest)? {
-            replacements_by_file
-                .entry(link.path.clone())
-                .or_default()
-                .push(replacement);
+    // Phase 2: Execute — all mutations are tracked for rollback.
+    let mut transaction = MoveTransaction::new(raw_file_path.to_path_buf(), resolved_dest.clone());
+
+    // Snapshot all files that will be modified before touching anything.
+    for file_path in replacements_by_file.keys() {
+        transaction.snapshot_file(file_path)?;
+    }
+
+    // Ensure the parent directory of the destination exists.
+    if let Some(parent) = resolved_dest.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    // Copy source to destination.
+    fs::copy(raw_file_path, &resolved_dest)?;
+    transaction.mark_copied();
+
+    // Compute internal link replacements from the newly copied file.
+    let internal_replacements =
+        plan_internal_replacements(&resolved_dest, raw_file_path, &resolved_dest)?;
+    if !internal_replacements.is_empty() {
+        // Snapshot the destination file (the copy) before modifying it.
+        transaction.snapshot_file(&resolved_dest)?;
+        replacements_by_file
+            .entry(resolved_dest.clone())
+            .or_default()
+            .extend(internal_replacements);
+    }
+
+    // Apply all replacements within a rollback-protected context.
+    execute_with_rollback(&transaction, || {
+        for (file_path, replacements) in &replacements_by_file {
+            apply_replacements(file_path, replacements)?;
         }
-    }
+        Ok(())
+    })?;
 
-    // Apply all replacements, one file at a time.
-    for (file_path, replacements) in &replacements_by_file {
-        apply_replacements(file_path, replacements)?;
-    }
-
-    // Remove the original file after updating references.
+    // Remove the original file.
     fs::remove_file(raw_file_path)?;
+    transaction.mark_source_removed();
 
     Ok(())
 }

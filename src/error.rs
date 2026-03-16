@@ -10,6 +10,12 @@ pub enum MdrefError {
 
     #[error("Invalid line number: {0}")]
     InvalidLine(String),
+
+    #[error("Operation failed and rollback also failed: {original_error}; rollback errors: {}", rollback_errors.join("; "))]
+    RollbackFailed {
+        original_error: String,
+        rollback_errors: Vec<String>,
+    },
 }
 
 pub type Result<T> = std::result::Result<T, MdrefError>;

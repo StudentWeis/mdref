@@ -1,6 +1,7 @@
 use mdref::{find_links, find_references, mv_file};
 use std::fs;
 use std::io::Write;
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -1665,4 +1666,245 @@ fn test_mv_file_to_nonexistent_path_still_works() {
     assert!(result.is_ok());
     assert!(target_file.exists());
     assert!(!source_file.exists());
+}
+
+// ============= atomicity / rollback tests =============
+
+/// When apply_replacements fails (reference file is read-only), the transaction should
+/// roll back: the copied destination file should be removed, and the source file should
+/// remain intact.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_rollback_on_write_failure() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source Content");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    let original_ref_content = "See [source](source.md) for details.";
+    write_file(&ref_file, original_ref_content);
+
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+
+    // Make the reference file read-only so that apply_replacements will fail on fs::write.
+    let mut permissions = fs::metadata(&ref_file).unwrap().permissions();
+    permissions.set_mode(0o444);
+    fs::set_permissions(&ref_file, permissions).unwrap();
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    // Restore permissions for cleanup (TempDir needs to delete files).
+    let mut permissions = fs::metadata(&ref_file).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&ref_file, permissions).unwrap();
+
+    // The operation should have failed.
+    assert!(
+        result.is_err(),
+        "mv_file should fail when a reference file is read-only"
+    );
+
+    // Source file should still exist (not deleted).
+    assert!(
+        source_file.exists(),
+        "Source file should still exist after rollback"
+    );
+
+    // Destination file should have been cleaned up by rollback.
+    assert!(
+        !target_file.exists(),
+        "Destination file should be removed by rollback"
+    );
+
+    // Reference file content should be unchanged.
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(
+        ref_content, original_ref_content,
+        "Reference file should be unchanged after rollback"
+    );
+}
+
+/// When a move fails mid-way through updating multiple reference files, all already-modified
+/// files should be restored to their original content.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_rollback_restores_already_modified_files() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source");
+
+    // Create two reference files. We'll make one read-only to trigger failure.
+    let ref_file_a = temp_dir.path().join("a_ref.md");
+    let original_a_content = "[Link](source.md)";
+    write_file(&ref_file_a, original_a_content);
+
+    let ref_file_b = temp_dir.path().join("b_ref.md");
+    let original_b_content = "[Link](source.md)";
+    write_file(&ref_file_b, original_b_content);
+
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+
+    // Make one reference file read-only to cause apply_replacements to fail.
+    // Since HashMap iteration order is non-deterministic, we make both read-only
+    // to guarantee failure regardless of processing order.
+    let mut perm_b = fs::metadata(&ref_file_b).unwrap().permissions();
+    perm_b.set_mode(0o444);
+    fs::set_permissions(&ref_file_b, perm_b).unwrap();
+
+    let mut perm_a = fs::metadata(&ref_file_a).unwrap().permissions();
+    perm_a.set_mode(0o444);
+    fs::set_permissions(&ref_file_a, perm_a).unwrap();
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    // Restore permissions for cleanup.
+    let mut perm_a = fs::metadata(&ref_file_a).unwrap().permissions();
+    perm_a.set_mode(0o644);
+    fs::set_permissions(&ref_file_a, perm_a).unwrap();
+
+    let mut perm_b = fs::metadata(&ref_file_b).unwrap().permissions();
+    perm_b.set_mode(0o644);
+    fs::set_permissions(&ref_file_b, perm_b).unwrap();
+
+    assert!(result.is_err(), "mv_file should fail");
+
+    // Source should still exist.
+    assert!(source_file.exists(), "Source should survive rollback");
+
+    // Destination should be cleaned up.
+    assert!(
+        !target_file.exists(),
+        "Destination should be removed by rollback"
+    );
+
+    // Both reference files should retain their original content.
+    let content_a = fs::read_to_string(&ref_file_a).unwrap();
+    let content_b = fs::read_to_string(&ref_file_b).unwrap();
+    assert_eq!(
+        content_a, original_a_content,
+        "ref_file_a should be restored after rollback"
+    );
+    assert_eq!(
+        content_b, original_b_content,
+        "ref_file_b should be restored after rollback"
+    );
+}
+
+/// A successful move with multiple references should complete without leaving any
+/// inconsistent state — verifying the happy path still works with the transaction wrapper.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_transaction_happy_path_multiple_refs() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source\n\n[Other](other.md)");
+
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other");
+
+    let ref_file_a = temp_dir.path().join("ref_a.md");
+    write_file(&ref_file_a, "[Source](source.md)");
+
+    let ref_file_b = temp_dir.path().join("ref_b.md");
+    write_file(&ref_file_b, "See [here](source.md) for info.");
+
+    let target_file = temp_dir.path().join("docs").join("moved.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(
+        result.is_ok(),
+        "Transaction happy path should succeed: {:?}",
+        result.err()
+    );
+
+    // Source should be gone, target should exist.
+    assert!(!source_file.exists());
+    assert!(target_file.exists());
+
+    // All references should be updated.
+    let content_a = fs::read_to_string(&ref_file_a).unwrap();
+    assert!(
+        content_a.contains("docs/moved.md"),
+        "ref_a should point to new location. Got: {}",
+        content_a
+    );
+
+    let content_b = fs::read_to_string(&ref_file_b).unwrap();
+    assert!(
+        content_b.contains("docs/moved.md"),
+        "ref_b should point to new location. Got: {}",
+        content_b
+    );
+
+    // Internal link in moved file should be updated.
+    let moved_content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        moved_content.contains("../other.md"),
+        "Internal link should be updated. Got: {}",
+        moved_content
+    );
+}
+
+/// Verify that when a move fails, the source file content is fully preserved.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_rollback_preserves_source_content() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let original_source_content = "# Important Document\n\nThis has [links](other.md) and **formatting**.\n\n## Section\n\nMore content here.";
+    let source_file = temp_dir.path().join("important.md");
+    write_file(&source_file, original_source_content);
+
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[Doc](important.md)");
+
+    let target_file = temp_dir.path().join("archive").join("important.md");
+
+    // Make reference file read-only to trigger failure.
+    let mut permissions = fs::metadata(&ref_file).unwrap().permissions();
+    permissions.set_mode(0o444);
+    fs::set_permissions(&ref_file, permissions).unwrap();
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    // Restore permissions for cleanup.
+    let mut permissions = fs::metadata(&ref_file).unwrap().permissions();
+    permissions.set_mode(0o644);
+    fs::set_permissions(&ref_file, permissions).unwrap();
+
+    assert!(result.is_err());
+
+    // Source file content must be exactly preserved.
+    let source_content = fs::read_to_string(&source_file).unwrap();
+    assert_eq!(
+        source_content, original_source_content,
+        "Source file content must be exactly preserved after rollback"
+    );
 }
