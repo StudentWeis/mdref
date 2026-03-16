@@ -3,3 +3,4 @@ date,commit,binary,size_bytes,gzip_bytes,delta_bytes,delta_gzip
 2026-03-16T08:49:17Z,c4c95df,target/release/mdref,1670384,665334,19792,10523
 2026-03-16T09:15:02Z,5876f27,target/release/mdref,1690208,669498,19824,4164
 2026-03-16T09:33:27Z,ef1652d,target/release/mdref,1689920,669488,-288,-10
+2026-03-16T09:38:10Z,95fd172,target/release/mdref,2945888,877907,1255968,208419
