@@ -1391,3 +1391,278 @@ fn test_mv_file_dry_run_destination_already_exists() {
         "Dry-run should also return error when destination already exists"
     );
 }
+
+// ============= move to directory tests =============
+
+/// Moving a file to an existing directory should place the file inside that directory.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_existing_directory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source Content");
+
+    // Create an existing target directory
+    let target_dir = temp_dir.path().join("subdir");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Move source file to the directory (not a file path)
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    // Operation should succeed
+    assert!(
+        result.is_ok(),
+        "mv_file should succeed when destination is an existing directory: {:?}",
+        result.err()
+    );
+
+    // Source should be moved into the directory with original filename
+    let expected_target = target_dir.join("source.md");
+    assert!(
+        expected_target.exists(),
+        "File should exist at {}/source.md",
+        target_dir.display()
+    );
+    assert!(!source_file.exists(), "Source file should no longer exist");
+
+    // Content should be preserved
+    let content = fs::read_to_string(&expected_target).unwrap();
+    assert_eq!(content, "# Source Content");
+}
+
+/// Moving a file to an existing directory with references should update them correctly.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_directory_with_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("doc.md");
+    write_file(&source_file, "# Documentation");
+
+    // Create a reference file pointing to source
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "See [doc](doc.md) for details.");
+
+    // Create target directory
+    let target_dir = temp_dir.path().join("docs");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Move source file to directory
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+
+    // Reference should be updated to point to docs/doc.md
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("docs/doc.md"),
+        "Reference should be updated to docs/doc.md. Got: {}",
+        ref_content
+    );
+}
+
+/// Moving a file to an existing directory with internal links should update them correctly.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_directory_updates_internal_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a sibling file
+    let sibling_file = temp_dir.path().join("other.md");
+    write_file(&sibling_file, "# Other");
+
+    // Create source file with link to sibling
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "[Other](other.md)");
+
+    // Create target directory
+    let target_dir = temp_dir.path().join("subdir");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Move source file to directory
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+
+    // Internal link should be updated to point to ../other.md
+    let moved_file = target_dir.join("source.md");
+    let content = fs::read_to_string(&moved_file).unwrap();
+    assert!(
+        content.contains("../other.md"),
+        "Internal link should be updated to ../other.md. Got: {}",
+        content
+    );
+}
+
+/// Moving a file to a nested existing directory should work correctly.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_nested_existing_directory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("file.md");
+    write_file(&source_file, "# Content");
+
+    // Create nested target directory
+    let target_dir = temp_dir.path().join("a").join("b").join("c");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Move source file to nested directory
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+
+    let expected_target = target_dir.join("file.md");
+    assert!(expected_target.exists());
+    assert!(!source_file.exists());
+}
+
+/// Moving a file to an existing directory in dry-run mode should not move the file.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_directory_dry_run() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source");
+
+    // Create target directory
+    let target_dir = temp_dir.path().join("docs");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Dry-run move to directory
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        true,
+    );
+
+    assert!(result.is_ok());
+    assert!(
+        source_file.exists(),
+        "Source file should still exist after dry-run"
+    );
+    assert!(
+        !target_dir.join("source.md").exists(),
+        "File should not be created during dry-run"
+    );
+}
+
+/// Moving a file to an existing directory that already contains a file with same name should fail.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_directory_file_already_exists() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create source file
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source Content");
+
+    // Create target directory with existing file of same name
+    let target_dir = temp_dir.path().join("docs");
+    fs::create_dir_all(&target_dir).unwrap();
+    let existing_file = target_dir.join("source.md");
+    write_file(&existing_file, "# Existing Content");
+
+    // Move should fail because file already exists in target directory
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(
+        result.is_err(),
+        "mv_file should fail when destination file already exists in directory"
+    );
+
+    // Both files should remain unchanged
+    assert!(source_file.exists());
+    assert_eq!(
+        fs::read_to_string(&existing_file).unwrap(),
+        "# Existing Content"
+    );
+}
+
+/// Moving a file with trailing slash to existing directory should work.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_directory_with_trailing_slash() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("doc.md");
+    write_file(&source_file, "# Doc");
+
+    let target_dir = temp_dir.path().join("folder");
+    fs::create_dir_all(&target_dir).unwrap();
+
+    // Path with trailing slash should still be recognized as directory
+    let target_with_slash = format!("{}/", target_dir.to_str().unwrap());
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        &target_with_slash,
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(
+        result.is_ok(),
+        "Trailing slash should be handled correctly: {:?}",
+        result.err()
+    );
+
+    let expected_target = target_dir.join("doc.md");
+    assert!(expected_target.exists());
+}
+
+/// Moving a file to a non-existent path (not a directory) should work as before.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_to_nonexistent_path_still_works() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("old.md");
+    write_file(&source_file, "# Old");
+
+    // Target is a file path that doesn't exist
+    let target_file = temp_dir.path().join("new.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+    assert!(!source_file.exists());
+}

@@ -19,6 +19,9 @@ struct LinkReplacement {
 ///
 /// When `dry_run` is `true`, no files are created, moved, or modified. Instead, the function
 /// prints all changes that *would* be made, allowing the user to preview the operation.
+///
+/// If the destination path is an existing directory, the source file will be moved into that
+/// directory with its original filename preserved.
 pub fn mv_file<P, B, D>(
     raw_file_path: P,
     new_file_path: B,
@@ -52,22 +55,35 @@ where
         ))
     })?;
 
+    // If destination is an existing directory, join with the source filename.
+    let resolved_dest = if new_file_path.is_dir() {
+        let filename = raw_file_path.file_name().ok_or_else(|| {
+            MdrefError::Path(format!(
+                "Source path has no filename: {}",
+                raw_file_path.display()
+            ))
+        })?;
+        new_file_path.join(filename)
+    } else {
+        new_file_path.to_path_buf()
+    };
+
     // For destination, canonicalize parent directory and join with filename
     // to handle cases where destination doesn't exist yet.
-    let new_canonical = if new_file_path.exists() {
-        new_file_path.canonicalize().map_err(|e| {
+    let new_canonical = if resolved_dest.exists() {
+        resolved_dest.canonicalize().map_err(|e| {
             MdrefError::Path(format!(
                 "Cannot canonicalize destination path '{}': {}",
-                new_file_path.display(),
+                resolved_dest.display(),
                 e
             ))
         })?
     } else {
         // If destination doesn't exist, resolve relative to its parent directory
-        let parent = new_file_path.parent().ok_or_else(|| {
+        let parent = resolved_dest.parent().ok_or_else(|| {
             MdrefError::Path(format!(
                 "Destination path has no parent directory: {}",
-                new_file_path.display()
+                resolved_dest.display()
             ))
         })?;
 
@@ -84,10 +100,10 @@ where
             parent.to_path_buf()
         };
 
-        let filename = new_file_path.file_name().ok_or_else(|| {
+        let filename = resolved_dest.file_name().ok_or_else(|| {
             MdrefError::Path(format!(
                 "Destination path has no filename: {}",
-                new_file_path.display()
+                resolved_dest.display()
             ))
         })?;
         parent_canonical.join(filename)
@@ -101,16 +117,16 @@ where
     // Check if destination file already exists to prevent accidental overwrite.
     // This check is done after canonicalize comparison to handle the case where
     // source and destination are the same file with different path representations.
-    if new_file_path.exists() {
+    if resolved_dest.exists() {
         return Err(MdrefError::Path(format!(
             "Destination file already exists: {}",
-            new_file_path.display()
+            resolved_dest.display()
         )));
     }
 
     if !dry_run {
         // Ensure the parent directory of the new file path exists.
-        if let Some(parent) = new_file_path.parent() {
+        if let Some(parent) = resolved_dest.parent() {
             fs::create_dir_all(parent)?;
         }
     }
@@ -119,9 +135,9 @@ where
     let references = find_references(raw_file_path, root_dir)?;
 
     if !dry_run {
-        // Copy the original file to the new file path.
+        // Copy the original file to the resolved destination path.
         // We copy first to avoid data loss in case of errors during reference updates.
-        fs::copy(raw_file_path, new_file_path)?;
+        fs::copy(raw_file_path, &resolved_dest)?;
     }
 
     // Collect all reference replacements, grouped by file path.
@@ -131,7 +147,7 @@ where
         // Extract the anchor from the link text (if any) to preserve it
         let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
 
-        let new_link_path = relative_path(&reference.path, new_file_path)?;
+        let new_link_path = relative_path(&reference.path, &resolved_dest)?;
 
         // Reconstruct the new pattern with anchor preserved
         let new_link_with_anchor = match anchor {
@@ -157,22 +173,23 @@ where
         // (since the file has not actually been copied to the new location).
         let links = find_links(raw_file_path)?;
         for link in &links {
-            if let Some(replacement) = build_link_replacement(link, raw_file_path, new_file_path)? {
+            if let Some(replacement) = build_link_replacement(link, raw_file_path, &resolved_dest)?
+            {
                 replacements_by_file
-                    .entry(new_file_path.to_path_buf())
+                    .entry(resolved_dest.clone())
                     .or_default()
                     .push(replacement);
             }
         }
 
-        print_dry_run_report(raw_file_path, new_file_path, &replacements_by_file);
+        print_dry_run_report(raw_file_path, &resolved_dest, &replacements_by_file);
         return Ok(());
     }
 
     // Collect all link replacements for the moved file itself.
-    let links = find_links(new_file_path)?;
+    let links = find_links(&resolved_dest)?;
     for link in &links {
-        if let Some(replacement) = build_link_replacement(link, raw_file_path, new_file_path)? {
+        if let Some(replacement) = build_link_replacement(link, raw_file_path, &resolved_dest)? {
             replacements_by_file
                 .entry(link.path.clone())
                 .or_default()
