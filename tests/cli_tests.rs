@@ -355,7 +355,10 @@ fn test_cli_mv_dry_run_does_not_move() {
 
     // Source should still exist, target should not
     assert!(source.exists(), "Source should still exist after dry-run");
-    assert!(!target.exists(), "Target should not be created during dry-run");
+    assert!(
+        !target.exists(),
+        "Target should not be created during dry-run"
+    );
 
     // Reference should be unchanged
     let ref_content = fs::read_to_string(&ref_file).unwrap();

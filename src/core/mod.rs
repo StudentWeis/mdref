@@ -1,3 +1,4 @@
 pub mod find;
 pub mod mv;
 pub mod reference;
+pub mod rename;

@@ -58,13 +58,10 @@ Links in ./examples/main.md:
 
 # Todo
 
-- [ ] More tests.
 - [ ] Directory path support.
 - [ ] Fix the case of link path with space.
 - [ ] VSCode extension.
-- [ ] Preview mode of mv command.
 - [ ] More documentations.
-- [ ] Cargo-dist oranda homepage.
 
 # Acknowledge
 

@@ -980,7 +980,12 @@ fn test_mv_file_with_trailing_slash_in_directory() {
     let path_without_slash = file.to_str().unwrap().to_string();
 
     // These should be treated as the same file
-    let result = mv_file(&path_with_slash, &path_without_slash, temp_dir.path(), false);
+    let result = mv_file(
+        &path_with_slash,
+        &path_without_slash,
+        temp_dir.path(),
+        false,
+    );
 
     assert!(file.exists(), "File must still exist");
     assert_eq!(fs::read_to_string(&file).unwrap(), "# Content");
@@ -1162,8 +1167,14 @@ fn test_mv_file_dry_run_does_not_move() {
     );
 
     assert!(result.is_ok());
-    assert!(source_file.exists(), "Source file should still exist after dry-run");
-    assert!(!target_file.exists(), "Target file should not be created during dry-run");
+    assert!(
+        source_file.exists(),
+        "Source file should still exist after dry-run"
+    );
+    assert!(
+        !target_file.exists(),
+        "Target file should not be created during dry-run"
+    );
 }
 
 /// Dry-run should not modify any reference files.
@@ -1207,11 +1218,7 @@ fn test_mv_file_dry_run_does_not_create_directories() {
     let source_file = temp_dir.path().join("source.md");
     write_file(&source_file, "# Source");
 
-    let target_file = temp_dir
-        .path()
-        .join("new")
-        .join("nested")
-        .join("target.md");
+    let target_file = temp_dir.path().join("new").join("nested").join("target.md");
 
     let result = mv_file(
         source_file.to_str().unwrap(),
@@ -1239,7 +1246,10 @@ fn test_mv_file_dry_run_validates_source() {
         true,
     );
 
-    assert!(result.is_err(), "Dry-run should still fail for nonexistent source");
+    assert!(
+        result.is_err(),
+        "Dry-run should still fail for nonexistent source"
+    );
 }
 
 /// Dry-run with rename (same directory, different name) should not modify anything.
@@ -1268,7 +1278,10 @@ fn test_mv_file_dry_run_rename_scenario() {
     assert!(!target_file.exists(), "Target should not be created");
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
-    assert_eq!(ref_content, "[Old](old_name.md)", "References should be unchanged");
+    assert_eq!(
+        ref_content, "[Old](old_name.md)",
+        "References should be unchanged"
+    );
 }
 
 /// Dry-run with internal links should not modify the source file.
@@ -1297,5 +1310,8 @@ fn test_mv_file_dry_run_with_internal_links() {
 
     // Source file content should be completely unchanged
     let content = fs::read_to_string(&source_file).unwrap();
-    assert_eq!(content, original_content, "Source file should not be modified during dry-run");
+    assert_eq!(
+        content, original_content,
+        "Source file should not be modified during dry-run"
+    );
 }

@@ -19,7 +19,12 @@ struct LinkReplacement {
 ///
 /// When `dry_run` is `true`, no files are created, moved, or modified. Instead, the function
 /// prints all changes that *would* be made, allowing the user to preview the operation.
-pub fn mv_file<P, B, D>(raw_file_path: P, new_file_path: B, root_dir: D, dry_run: bool) -> Result<()>
+pub fn mv_file<P, B, D>(
+    raw_file_path: P,
+    new_file_path: B,
+    root_dir: D,
+    dry_run: bool,
+) -> Result<()>
 where
     P: AsRef<Path>,
     B: AsRef<Path>,
