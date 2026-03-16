@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Check if a version argument is provided
 if [ -z "$1" ]; then
