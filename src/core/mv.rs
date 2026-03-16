@@ -190,6 +190,12 @@ fn build_link_replacement(
     // Strip anchor from link text so canonicalize works on the file path only.
     let (link_path_only, anchor) = split_link_and_anchor(&r.link_text);
 
+    // Pure anchor links (e.g. "#section") are internal to the document
+    // and should not be rewritten during a file move.
+    if link_path_only.is_empty() {
+        return Ok(None);
+    }
+
     let parent = raw_filepath
         .parent()
         .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
@@ -689,6 +695,46 @@ mod tests {
         assert!(
             result.unwrap().is_none(),
             "Broken links should be skipped (return None)"
+        );
+    }
+
+    // ============= build_link_replacement with pure anchor links =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_link_replacement_skips_pure_anchor_link() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let target = temp_dir.path().join("sub").join("target.md");
+        write_file(source.to_str().unwrap(), "[Section](#section)");
+        write_file(target.to_str().unwrap(), "");
+
+        let reference = Reference::new(target.clone(), 1, 1, "#section".to_string());
+
+        // Pure anchor links are internal to the file and should not be rewritten
+        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        assert!(
+            result.is_none(),
+            "Pure anchor link (#section) should be skipped, but got: {:?}",
+            result.map(|r| r.new_pattern)
+        );
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_build_link_replacement_skips_pure_anchor_with_complex_fragment() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let target = temp_dir.path().join("target.md");
+        write_file(source.to_str().unwrap(), "[TOC](#table-of-contents)");
+        write_file(target.to_str().unwrap(), "");
+
+        let reference = Reference::new(target.clone(), 1, 1, "#table-of-contents".to_string());
+
+        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        assert!(
+            result.is_none(),
+            "Pure anchor link (#table-of-contents) should be skipped"
         );
     }
 

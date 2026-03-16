@@ -997,6 +997,90 @@ fn test_mv_file_symlink_to_same_file() {
     }
 }
 
+/// Move file containing pure anchor links (#section) should preserve them unchanged.
+/// Pure anchor links are internal to the document and should not be rewritten.
+#[test]
+fn test_mv_file_preserves_pure_anchor_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(
+        &source_file,
+        "# Title\n\n[Section](#section)\n\n[Another](#another-heading)\n\n## Section\n\n## Another Heading",
+    );
+
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(
+        result.is_ok(),
+        "mv_file should not fail on pure anchor links: {:?}",
+        result.err()
+    );
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    // Pure anchor links should remain exactly as-is
+    assert!(
+        content.contains("](#section)"),
+        "Pure anchor link (#section) should be preserved unchanged. Got: {}",
+        content
+    );
+    assert!(
+        content.contains("](#another-heading)"),
+        "Pure anchor link (#another-heading) should be preserved unchanged. Got: {}",
+        content
+    );
+}
+
+/// Move file with mixed pure anchor links and file links.
+/// Only file links should be updated; pure anchors should stay unchanged.
+#[test]
+fn test_mv_file_mixed_pure_anchor_and_file_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let other_file = temp_dir.path().join("other.md");
+    write_file(&other_file, "# Other");
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(
+        &source_file,
+        "[Internal](#intro)\n\n[Other](other.md)\n\n[Other Section](other.md#details)\n\n## Intro",
+    );
+
+    let target_file = temp_dir.path().join("sub").join("moved.md");
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    let content = fs::read_to_string(&target_file).unwrap();
+    // Pure anchor link should be unchanged
+    assert!(
+        content.contains("](#intro)"),
+        "Pure anchor link should be preserved. Got: {}",
+        content
+    );
+    // File link should be updated with relative path
+    assert!(
+        content.contains("](../other.md)"),
+        "File link should be updated. Got: {}",
+        content
+    );
+    // File link with anchor should be updated but anchor preserved
+    assert!(
+        content.contains("](../other.md#details)"),
+        "File link with anchor should be updated. Got: {}",
+        content
+    );
+}
+
 /// Move file with anchor links, preserving the anchor fragments.
 #[test]
 fn test_mv_file_preserves_anchor_links() {
