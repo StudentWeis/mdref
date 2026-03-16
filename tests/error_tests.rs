@@ -44,7 +44,9 @@ fn test_mv_file_io_error_nonexistent_source() {
         temp_dir.path().to_str().unwrap(),
     );
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), MdrefError::Io(_)));
+    // mv_file now explicitly checks for source existence and returns Path error
+    // with a descriptive message before attempting any IO operations.
+    assert!(matches!(result.unwrap_err(), MdrefError::Path(_)));
 }
 
 // ============= mv_file overwrites existing target =============

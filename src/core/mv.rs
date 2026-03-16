@@ -26,8 +26,67 @@ where
     let new_file_path = new_file_path.as_ref();
     let root_dir = root_dir.as_ref();
 
-    // If source and destination are the same, nothing to do.
-    if raw_file_path == new_file_path {
+    // Check if source file exists before proceeding.
+    if !raw_file_path.exists() {
+        return Err(MdrefError::Path(format!(
+            "Source file does not exist: {}",
+            raw_file_path.display()
+        )));
+    }
+
+    // Use canonicalize to reliably detect if source and destination point to the same file.
+    // This handles cases like: "file.md" vs "./file.md", relative vs absolute paths, symlinks, etc.
+    let raw_canonical = raw_file_path.canonicalize().map_err(|e| {
+        MdrefError::Path(format!(
+            "Cannot canonicalize source path '{}': {}",
+            raw_file_path.display(),
+            e
+        ))
+    })?;
+
+    // For destination, canonicalize parent directory and join with filename
+    // to handle cases where destination doesn't exist yet.
+    let new_canonical = if new_file_path.exists() {
+        new_file_path.canonicalize().map_err(|e| {
+            MdrefError::Path(format!(
+                "Cannot canonicalize destination path '{}': {}",
+                new_file_path.display(),
+                e
+            ))
+        })?
+    } else {
+        // If destination doesn't exist, resolve relative to its parent directory
+        let parent = new_file_path.parent().ok_or_else(|| {
+            MdrefError::Path(format!(
+                "Destination path has no parent directory: {}",
+                new_file_path.display()
+            ))
+        })?;
+
+        // Canonicalize parent (it may or may not exist)
+        let parent_canonical = if parent.exists() {
+            parent.canonicalize().map_err(|e| {
+                MdrefError::Path(format!(
+                    "Cannot canonicalize parent directory '{}': {}",
+                    parent.display(),
+                    e
+                ))
+            })?
+        } else {
+            parent.to_path_buf()
+        };
+
+        let filename = new_file_path.file_name().ok_or_else(|| {
+            MdrefError::Path(format!(
+                "Destination path has no filename: {}",
+                new_file_path.display()
+            ))
+        })?;
+        parent_canonical.join(filename)
+    };
+
+    // If source and destination resolve to the same file, nothing to do.
+    if raw_canonical == new_canonical {
         return Ok(());
     }
 

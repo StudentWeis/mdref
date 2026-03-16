@@ -437,8 +437,6 @@ fn test_mv_file_with_image_links() {
     assert!(content.contains("../assets/photo.png"));
 }
 
-// ============= Move file with mixed link types =============
-
 #[test]
 fn test_mv_file_preserves_external_urls() {
     let temp_dir = TempDir::new().unwrap();
@@ -470,8 +468,6 @@ fn test_mv_file_preserves_external_urls() {
     assert!(content.contains("../local.md"));
 }
 
-// ============= Move from subdirectory to root =============
-
 #[test]
 fn test_mv_file_from_subdir_to_root() {
     let temp_dir = TempDir::new().unwrap();
@@ -501,8 +497,6 @@ fn test_mv_file_from_subdir_to_root() {
     let content = fs::read_to_string(&target_file).unwrap();
     assert!(content.contains("sub/sibling.md"));
 }
-
-// ============= Edge case tests =============
 
 /// Move file to a target path with non-existent intermediate directories.
 #[test]
@@ -844,6 +838,162 @@ fn test_mv_file_source_equals_dest() {
     if result.is_ok() {
         let content = fs::read_to_string(&file).unwrap();
         assert_eq!(content, "# Content");
+    }
+}
+
+/// Moving a file to itself with relative path variants should be handled correctly.
+/// "file.md" and "./file.md" refer to the same file but string comparison fails.
+#[test]
+fn test_mv_file_same_file_different_path_formats() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let file = temp_dir.path().join("test.md");
+    write_file(&file, "# Test Content\n\n[Link](other.md)");
+
+    // Create a reference file to verify no unintended side effects
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Test](test.md)");
+
+    let original_ref_content = fs::read_to_string(&ref_file).unwrap();
+
+    // Use different path formats that point to the same file
+    let abs_path = file.canonicalize().unwrap();
+    let rel_path = "./test.md";
+
+    // Change to temp directory to test relative path resolution
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp_dir.path()).unwrap();
+
+    let result = mv_file(rel_path, abs_path.to_str().unwrap(), ".");
+
+    // Restore original directory
+    std::env::set_current_dir(original_dir).unwrap();
+
+    // File must still exist with original content
+    assert!(file.exists(), "File should still exist");
+    let content = fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "# Test Content\n\n[Link](other.md)");
+
+    // References should remain unchanged (no-op behavior)
+    let ref_content_after = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(
+        original_ref_content, ref_content_after,
+        "References should not be modified when source equals dest"
+    );
+
+    // Operation should succeed (no-op) or at least not corrupt data
+    assert!(result.is_ok(), "Operation should succeed as no-op");
+}
+
+/// Moving a file to itself with "./" prefix on both paths.
+#[test]
+fn test_mv_file_dot_slash_paths() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let file = temp_dir.path().join("doc.md");
+    write_file(&file, "# Documentation");
+
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp_dir.path()).unwrap();
+
+    // Both paths use "./" prefix - they refer to the same file
+    let result = mv_file("./doc.md", "./doc.md", ".");
+
+    std::env::set_current_dir(original_dir).unwrap();
+
+    assert!(file.exists(), "File must still exist");
+    let content = fs::read_to_string(&file).unwrap();
+    assert_eq!(content, "# Documentation");
+    assert!(result.is_ok(), "Should succeed as no-op");
+}
+
+/// Moving a file to itself should not modify references.
+/// If source == dest, all reference updates would be no-ops anyway.
+#[test]
+fn test_mv_file_same_path_preserves_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source\n\n[Self](source.md)");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(&ref_file, "[Link](source.md)");
+
+    let original_ref_content = fs::read_to_string(&ref_file).unwrap();
+    let original_source_content = fs::read_to_string(&source_file).unwrap();
+
+    // Move to the same location
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        source_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+    );
+
+    // Both files should be unchanged
+    assert!(source_file.exists());
+    assert_eq!(
+        fs::read_to_string(&source_file).unwrap(),
+        original_source_content
+    );
+    assert_eq!(fs::read_to_string(&ref_file).unwrap(), original_ref_content);
+    assert!(result.is_ok());
+}
+
+/// Moving file to itself with trailing slash in directory path.
+/// This tests path normalization edge cases.
+#[test]
+fn test_mv_file_with_trailing_slash_in_directory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let file = temp_dir.path().join("file.md");
+    write_file(&file, "# Content");
+
+    // Path with trailing slash on directory portion
+    let path_with_slash = format!("{}/file.md", temp_dir.path().to_str().unwrap());
+    let path_without_slash = file.to_str().unwrap().to_string();
+
+    // These should be treated as the same file
+    let result = mv_file(&path_with_slash, &path_without_slash, temp_dir.path());
+
+    assert!(file.exists(), "File must still exist");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "# Content");
+    assert!(result.is_ok(), "Should succeed as no-op");
+}
+
+/// Moving file to itself with symlink (if supported by OS).
+/// Symlinks that resolve to the same file should be detected.
+#[test]
+fn test_mv_file_symlink_to_same_file() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let real_file = temp_dir.path().join("real.md");
+    write_file(&real_file, "# Real Content");
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::symlink;
+
+        let symlink_path = temp_dir.path().join("link.md");
+        symlink(&real_file, &symlink_path).unwrap();
+
+        // Move from symlink to real file - both resolve to same content
+        let result = mv_file(
+            symlink_path.to_str().unwrap(),
+            real_file.to_str().unwrap(),
+            temp_dir.path(),
+        );
+
+        // Behavior should be safe - either no-op or well-defined
+        assert!(real_file.exists(), "Real file must exist");
+        assert_eq!(fs::read_to_string(&real_file).unwrap(), "# Real Content");
+        // Result can be Ok or Err, but data must be preserved
+        let _ = result;
+    }
+
+    #[cfg(not(unix))]
+    {
+        // Skip on non-Unix platforms
+        println!("Symlink test skipped on non-Unix platform");
     }
 }
 
