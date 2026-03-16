@@ -6,7 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
-use super::util::{is_external_url, strip_anchor};
+use super::util::{is_external_url, strip_anchor, url_decode_link};
 use crate::{Reference, Result};
 
 /// Find all references to a given file within Markdown files in the specified root directory.
@@ -176,6 +176,7 @@ fn match_link_to_target(canonical_link: &Path, target: &Path) -> bool {
 ///
 /// Handles both absolute and relative links.
 /// For relative links, resolves them relative to the base file's parent directory.
+/// Also handles URL-encoded characters in the link path (e.g., `%20` for space).
 fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
     if link_path.is_absolute() {
         return Some(link_path.to_path_buf());
@@ -183,7 +184,11 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
 
     // Resolve relative to the base file's directory
     let parent = base_path.parent()?;
-    let resolved = parent.join(link_path);
+
+    // Convert link_path to string and decode URL encoding
+    let link_str = link_path.to_str()?;
+    let decoded_link = url_decode_link(link_str);
+    let resolved = parent.join(decoded_link);
 
     if resolved.exists() {
         Some(resolved)
@@ -261,6 +266,109 @@ mod tests {
 
         let result = resolve_link(&base, Path::new("../target.md"));
         assert!(result.is_some());
+    }
+
+    // ============= resolve_link with URL-encoded paths =============
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_url_encoded_space() {
+        // Test that %20 encoded spaces are decoded correctly
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("my file.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        // The link "my%20file.md" should resolve to "my file.md"
+        let result = resolve_link(&base, Path::new("my%20file.md"));
+        assert!(result.is_some(), "URL-encoded space should be decoded");
+        assert!(result.unwrap().ends_with("my file.md"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_url_encoded_multiple_spaces() {
+        // Test multiple encoded spaces in path
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("my document with spaces.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        let result = resolve_link(&base, Path::new("my%20document%20with%20spaces.md"));
+        assert!(
+            result.is_some(),
+            "Multiple URL-encoded spaces should be decoded"
+        );
+        assert!(result.unwrap().ends_with("my document with spaces.md"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_url_encoded_in_subdirectory() {
+        // Test encoded spaces in subdirectory path
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let subdir = temp_dir.path().join("my docs");
+        let target = subdir.join("read me.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        let result = resolve_link(&base, Path::new("my%20docs/read%20me.md"));
+        assert!(
+            result.is_some(),
+            "URL-encoded path with subdirectory should work"
+        );
+        assert!(result.unwrap().ends_with("read me.md"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_mixed_encoded_and_plain() {
+        // Test path with both encoded and actual spaces
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("my file name.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        // Even if the link has a mix of %20 and actual spaces, it should resolve
+        let result = resolve_link(&base, Path::new("my%20file name.md"));
+        assert!(result.is_some(), "Mixed encoding should still work");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_plain_space_in_link() {
+        // Test link that already contains actual spaces (not encoded)
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let target = temp_dir.path().join("my file.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        // Link with actual space should work directly
+        let result = resolve_link(&base, Path::new("my file.md"));
+        assert!(result.is_some(), "Plain space in link should work");
+        assert!(result.unwrap().ends_with("my file.md"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_resolve_link_plain_space_in_subdirectory() {
+        // Test link with spaces in both directory and filename
+        let temp_dir = TempDir::new().unwrap();
+        let base = temp_dir.path().join("base.md");
+        let subdir = temp_dir.path().join("my docs");
+        let target = subdir.join("read me.md");
+        write_file(&base, "");
+        write_file(&target, "");
+
+        // Link with spaces in path should work directly
+        let result = resolve_link(&base, Path::new("my docs/read me.md"));
+        assert!(result.is_some(), "Plain spaces in path should work");
+        assert!(result.unwrap().ends_with("read me.md"));
     }
 
     // ============= match_link_to_target tests =============

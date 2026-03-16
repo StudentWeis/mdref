@@ -3,9 +3,106 @@ use std::path::{Path, PathBuf};
 
 use crate::{MdrefError, Result};
 
+/// Decode URL percent-encoded characters in a link.
+///
+/// This function decodes common URL encodings like `%20` (space), `%2B` (+), etc.
+/// This is necessary because Markdown links may contain URL-encoded paths,
+/// especially when the actual file has spaces or special characters.
+///
+/// # Examples
+/// - `"my%20file.md"` -> `"my file.md"`
+/// - `"path%20to/file.md"` -> `"path to/file.md"`
+/// - `"file.md#section"` -> `"file.md#section"` (anchor preserved)
+pub fn url_decode_link(link: &str) -> String {
+    let mut result = String::with_capacity(link.len());
+    let chars: Vec<char> = link.chars().collect();
+    let mut i = 0;
+
+    while i < chars.len() {
+        if chars[i] == '%' && i + 2 < chars.len() {
+            // Try to parse the next two characters as hex digits
+            let hex = &link[i + 1..i + 3];
+            if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                // Valid hex encoding, decode it
+                result.push(byte as char);
+                i += 3;
+                continue;
+            }
+        }
+        // Not a valid encoding, just push the character as-is
+        result.push(chars[i]);
+        i += 1;
+    }
+
+    result
+}
+
 /// Check if a link is an external URL (http, https, ftp, mailto, etc.)
+///
+/// Returns `true` for:
+/// - URLs with scheme containing `://` (http://, https://, ftp://, etc.) except `file://`
+/// - Common URI schemes without `://` (mailto:, tel:, data:, javascript:)
+///
+/// Returns `false` for:
+/// - Local file paths (relative or absolute)
+/// - `file://` URLs (these are local files)
+/// - Pure anchor links (handled separately)
 pub fn is_external_url(link: &str) -> bool {
-    link.contains("://")
+    let link_lower = link.to_lowercase();
+
+    // Handle schemes without :// (these are external)
+    // mailto:, tel:, data:, javascript:, etc.
+    let non_colon_slash_schemes = [
+        "mailto:",
+        "tel:",
+        "sms:",
+        "data:",
+        "javascript:",
+        "vbscript:",
+        "about:",
+        "blob:",
+        "geo:",
+        "irc:",
+        "ircs:",
+        "magnet:",
+        "mms:",
+        "news:",
+        "nntp:",
+        "sip:",
+        "sips:",
+        "skype:",
+        "ssh:",
+        "telnet:",
+        "urn:",
+        "webcal:",
+    ];
+
+    for scheme in &non_colon_slash_schemes {
+        if link_lower.starts_with(scheme) {
+            return true;
+        }
+    }
+
+    // file:// is a local file, not external
+    if link_lower.starts_with("file://") {
+        return false;
+    }
+
+    // Check for :// schemes (http://, https://, ftp://, etc.)
+    if link.contains("://") {
+        // Extract scheme and check it's not a local file scheme
+        if let Some(scheme_end) = link.find("://") {
+            let scheme = &link[..scheme_end].to_lowercase();
+            // Only known remote schemes are external
+            let remote_schemes = [
+                "http", "https", "ftp", "ftps", "sftp", "ws", "wss", "git", "svn", "svn+ssh", "hg",
+                "cvs", "apt", "dav", "nfs", "smb",
+            ];
+            return remote_schemes.contains(&scheme.as_str());
+        }
+    }
+
+    false
 }
 
 /// Strip the anchor (fragment) from a link URL.
@@ -85,24 +182,15 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    // ============= is_external_url tests =============
-
     #[test]
-    fn test_is_external_url_https() {
-        assert!(is_external_url("https://google.com"));
-        assert!(is_external_url("https://github.com/user/repo"));
-    }
-
-    #[test]
-    fn test_is_external_url_http() {
+    fn test_is_external_url() {
         assert!(is_external_url("http://example.com"));
         assert!(is_external_url("http://localhost:8080/path"));
-    }
-
-    #[test]
-    fn test_is_external_url_other_protocols() {
+        assert!(is_external_url("https://google.com"));
+        assert!(is_external_url("https://github.com/user/repo"));
         assert!(is_external_url("ftp://files.example.com/doc.md"));
-        assert!(is_external_url("mailto://user@example.com"));
+        assert!(is_external_url("sftp://secure.example.com/file"));
+        assert!(is_external_url("git://github.com/user/repo.git"));
     }
 
     #[test]
@@ -112,6 +200,33 @@ mod tests {
         assert!(!is_external_url("../parent/file.md"));
         assert!(!is_external_url("./relative.md"));
         assert!(!is_external_url("image.png"));
+    }
+
+    #[test]
+    fn test_is_external_url_file_scheme() {
+        // file:// should NOT be considered external (it's a local file)
+        assert!(!is_external_url("file:///path/to/file.md"));
+        assert!(!is_external_url("file://localhost/path/to/file.md"));
+        assert!(!is_external_url("FILE:///C:/Users/doc.md")); // case insensitive
+    }
+
+    #[test]
+    fn test_is_external_url_schemes_without_colon_slash() {
+        // Schemes without :// should be detected as external
+        assert!(is_external_url("mailto:user@example.com"));
+        assert!(is_external_url("tel:+1234567890"));
+        assert!(is_external_url("sms:+1234567890"));
+        assert!(is_external_url("data:text/plain,Hello"));
+        assert!(is_external_url("javascript:alert('xss')"));
+        assert!(is_external_url("MAILTO:user@example.com")); // case insensitive
+    }
+
+    #[test]
+    fn test_is_external_url_windows_paths() {
+        // Windows absolute paths should NOT be external
+        assert!(!is_external_url("C:\\path\\to\\file.md"));
+        assert!(!is_external_url("D:/path/to/file.md"));
+        assert!(!is_external_url("C:/Users/name/documents/readme.md"));
     }
 
     // ============= strip_anchor tests =============
@@ -247,5 +362,76 @@ mod tests {
         let result = resolve_parent(&nonexist).unwrap();
         // Should resolve to the temp_dir + "a/b/c"
         assert!(result.ends_with("a/b/c"));
+    }
+
+    // ============= url_decode_link tests =============
+
+    #[test]
+    fn test_url_decode_link_no_encoding() {
+        // Plain path without any encoding should remain unchanged
+        assert_eq!(url_decode_link("file.md"), "file.md");
+        assert_eq!(url_decode_link("path/to/file.md"), "path/to/file.md");
+        assert_eq!(url_decode_link("./relative.md"), "./relative.md");
+    }
+
+    #[test]
+    fn test_url_decode_link_space_encoding() {
+        // %20 should be decoded to space
+        assert_eq!(url_decode_link("my%20file.md"), "my file.md");
+        assert_eq!(url_decode_link("path%20to/file.md"), "path to/file.md");
+        assert_eq!(url_decode_link("my%20file%20name.md"), "my file name.md");
+    }
+
+    #[test]
+    fn test_url_decode_link_multiple_spaces() {
+        // Multiple encoded spaces
+        assert_eq!(
+            url_decode_link("docs/my%20document%20with%20spaces.md"),
+            "docs/my document with spaces.md"
+        );
+    }
+
+    #[test]
+    fn test_url_decode_link_special_chars() {
+        // Other URL encoded characters
+        assert_eq!(url_decode_link("file%2Bname.md"), "file+name.md"); // +
+        assert_eq!(url_decode_link("file%23name.md"), "file#name.md"); // #
+        assert_eq!(url_decode_link("file%26name.md"), "file&name.md"); // &
+        assert_eq!(url_decode_link("file%40name.md"), "file@name.md"); // @
+    }
+
+    #[test]
+    fn test_url_decode_link_preserves_anchor() {
+        // Anchor (fragment) should be preserved, only path decoded
+        assert_eq!(
+            url_decode_link("my%20file.md#section"),
+            "my file.md#section"
+        );
+        assert_eq!(
+            url_decode_link("path%20to/file.md#my-section"),
+            "path to/file.md#my-section"
+        );
+    }
+
+    #[test]
+    fn test_url_decode_link_invalid_encoding() {
+        // Invalid encoding should be handled gracefully
+        // % without two hex digits
+        assert_eq!(url_decode_link("file%.md"), "file%.md");
+        assert_eq!(url_decode_link("file%2.md"), "file%2.md");
+        // Incomplete encoding at end
+        assert_eq!(url_decode_link("file%2"), "file%2");
+    }
+
+    #[test]
+    fn test_url_decode_link_mixed_encoding() {
+        // Mix of encoded and unencoded characters
+        assert_eq!(url_decode_link("my%20file name.md"), "my file name.md");
+    }
+
+    #[test]
+    fn test_url_decode_link_percent_sign() {
+        // %25 is encoded percent sign
+        assert_eq!(url_decode_link("100%25.md"), "100%.md");
     }
 }
