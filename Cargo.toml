@@ -28,3 +28,6 @@ lto = "thin"
 [[bench]]
 name = "benchmark"
 harness = false
+
+[package.metadata.release]
+tag-name = "{{version}}"

@@ -27,4 +27,15 @@ git cliff --unreleased --tag $NEW_VERSION --prepend CHANGELOG.md
 
 dist plan
 
+# Confirm before running cargo release --execute
+while true; do
+    read -r -p "Run 'cargo release --execute'? [Y/n] " REPLY
+    REPLY=${REPLY:-Y}
+    case "$REPLY" in
+        [Yy]*) echo "Running cargo release --execute..."; cargo release; break;;
+        [Nn]*) echo "Release aborted by user."; exit 0;;
+        *) echo "Please answer Y or n.";;
+    esac
+done
+
 echo "Update completed!"
