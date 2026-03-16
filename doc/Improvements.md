@@ -14,61 +14,9 @@
 - 递归移动目录下所有文件
 - 批量更新所有引用路径
 
-### 4. 引用式链接（Reference Links）未支持
-
-**问题**：Markdown 支持引用式链接语法，当前未在 `mv` 流程中处理：
-
-```markdown
-[text][ref]
-
-[ref]: ./file.md
-```
-
-**改进建议**：扩展 `find` 和 `mv` 以支持 `link reference definitions` 的查找和更新。
-
----
-
 ## 二、代码质量问题
 
-### 1. Reference 模型信息不足
-
-**问题**：当前 `Reference` 结构体缺少关键信息。
-
-```rust
-pub struct Reference {
-    pub path: PathBuf,
-    pub line: usize,
-    pub column: usize,
-    pub link_text: String,  // 只有 link，没有 link text
-}
-```
-
-**缺失信息**：
-- 链接文本 `[text]` 部分
-- 原始整行内容
-- 链接类型（图片/文档/外部 URL）
-
-**改进建议**：
-
-```rust
-pub struct Reference {
-    pub path: PathBuf,
-    pub line: usize,
-    pub column: usize,
-    pub link_text: String,
-    pub link_title: Option<String>,      // 新增：链接显示文本
-    pub link_type: LinkType,              // 新增：链接类型
-}
-
-pub enum LinkType {
-    Document,
-    Image,
-    External,
-    Anchor,
-}
-```
-
-### 2. 错误处理粒度不够
+### 错误处理粒度不够
 
 **问题**：缺少具体的错误上下文，用户难以定位问题根源。
 
@@ -171,18 +119,6 @@ warn!("Skipping unsupported link: {}", link);
 
 ## 四、测试与文档
 
-### 1. 测试覆盖不全
-
-**问题**：
-- 未覆盖 Windows 路径场景（跨平台兼容性）
-- 未测试 Unicode 文件名和路径
-- 边界条件：空文件、超大文件、符号链接
-
-**改进建议**：添加测试用例：
-- Windows 风格路径 (`C:\path\file.md`, `.\relative\path.md`)
-- Unicode 文件名 (`中文文档.md`, `ドキュメント.md`)
-- 特殊场景（空文件、符号链接、权限问题）
-
 ### 2. 文档待完善
 
 **问题**：
@@ -194,48 +130,10 @@ warn!("Skipping unsupported link: {}", link);
 - 创建 `doc/Usage.md` 详细使用指南
 - 创建 `doc/API.md` 库接口说明
 
----
-
-## 五、性能优化空间
-
-### 1. 文件过滤时机
-
-**问题**：当前在遍历后过滤，而非遍历前配置。
-
-```rust
-// 当前实现
-WalkDir::new(root_dir)
-    .into_iter()
-    .par_bridge()
-    .filter(|e| e.path().extension()... == Some("md"))
-```
-
-**改进建议**：使用 `WalkDir` 的配置方法：
-
-```rust
-WalkDir::new(root_dir)
-    .into_iter()
-    .filter_entry(|e| {
-        e.file_type().is_dir() || 
-        e.path().extension().and_then(|s| s.to_str()) == Some("md")
-    })
-```
-
-### 2. 潜在内存优化
-
-**问题**：大文件一次性读入内存。
-
-**改进建议**：对于超大文件考虑流式处理（通常 Markdown 文件较小，优先级较低）。
-
----
-
 ## 六、优先级排序
 
 | 优先级 | 改进项 | 原因 | 预估工作量 |
 |--------|--------|------|------------|
-| **P0** | 带空格路径支持 | 影响基本功能可用性 | 中 |
-| **P0** | `is_external_url` 修复 | 可能导致链接误判 | 低 |
-| **P1** | 引用式链接支持 | 常见 Markdown 语法 | 中 |
 | **P1** | 配置系统 | 灵活性需求 | 中 |
 | **P1** | 日志系统 | 可维护性 | 低 |
 | **P2** | JSON 输出格式 | CI/CD 集成需求 | 低 |
@@ -243,17 +141,3 @@ WalkDir::new(root_dir)
 | **P2** | 错误处理优化 | 问题排查效率 | 中 |
 | **P3** | 目录移动支持 | 功能完整性 | 高 |
 | **P3** | VSCode 扩展 | 用户体验提升 | 高 |
-| **P3** | Reference 模型扩展 | 架构优化 | 中 |
-
----
-
-## 七、总结
-
-`mdref` 当前架构实用且高效，核心功能稳定。主要改进方向：
-
-1. **功能完整性**：支持更多 Markdown 语法、路径格式
-2. **可配置性**：添加配置系统提升灵活性
-3. **可观测性**：日志、进度、JSON 输出
-4. **跨平台兼容**：Windows 路径、Unicode 支持
-
-建议按 P0 → P1 → P2 → P3 顺序逐步推进改进。

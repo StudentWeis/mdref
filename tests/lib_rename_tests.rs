@@ -167,3 +167,81 @@ fn test_rename_nonexistent_file() {
     );
     assert!(result.is_err());
 }
+
+// ============= Unicode rename tests =============
+
+/// Test renaming file with Chinese name to another Chinese name.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_chinese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("旧名称.md");
+    write_file(&source, "# 中文文档");
+
+    let result = rename_file(&source, "新名称.md", temp_dir.path(), false);
+
+    assert!(result.is_ok());
+    assert!(!source.exists());
+    assert!(temp_dir.path().join("新名称.md").exists());
+}
+
+/// Test renaming ASCII file to Unicode filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_ascii_to_unicode() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("document.md");
+    write_file(&source, "# Document");
+
+    let result = rename_file(&source, "文档.md", temp_dir.path(), false);
+
+    assert!(result.is_ok());
+    assert!(temp_dir.path().join("文档.md").exists());
+}
+
+/// Test renaming Unicode file updates external references correctly.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_unicode_updates_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source = temp_dir.path().join("原始文档.md");
+    write_file(&source, "# 原始文档");
+
+    let ref_file = temp_dir.path().join("索引.md");
+    write_file(&ref_file, "参考 [原始文档](原始文档.md) 获取更多信息。");
+
+    rename_file(&source, "更新文档.md", temp_dir.path(), false).unwrap();
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(ref_content.contains("更新文档.md"));
+    assert!(!ref_content.contains("原始文档.md"));
+}
+
+/// Test renaming file with Japanese name.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_japanese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("旧文件.md");
+    write_file(&source, "# ドキュメント");
+
+    let result = rename_file(&source, "新文件.md", temp_dir.path(), false);
+
+    assert!(result.is_ok());
+    assert!(temp_dir.path().join("新文件.md").exists());
+}
+
+/// Test renaming file with emoji in name.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_emoji_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let source = temp_dir.path().join("📝笔记.md");
+    write_file(&source, "# Notes");
+
+    let result = rename_file(&source, "📚文档.md", temp_dir.path(), false);
+
+    assert!(result.is_ok());
+    assert!(temp_dir.path().join("📚文档.md").exists());
+}

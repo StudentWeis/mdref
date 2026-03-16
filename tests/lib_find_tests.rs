@@ -327,3 +327,104 @@ fn test_find_references_directory_target() {
     // Should find references to files inside the inner directory
     assert!(!result.is_empty());
 }
+
+// ============= Unicode tests =============
+
+/// Test find_links with Chinese filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_chinese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let chinese_file = temp_dir.path().join("中文文档.md");
+    write_file(&chinese_file, "# 中文标题\n\n[链接](其他文档.md)\n");
+
+    let result = find_links(&chinese_file).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].link_text, "其他文档.md");
+}
+
+/// Test find_links with Japanese filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_japanese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let japanese_file = temp_dir.path().join("ドキュメント.md");
+    write_file(
+        &japanese_file,
+        "# ドキュメント\n\n[リンク](他のファイル.md)\n",
+    );
+
+    let result = find_links(&japanese_file).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].link_text, "他のファイル.md");
+}
+
+/// Test find_links with emoji in filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_emoji_filename() {
+    let temp_dir = TempDir::new().unwrap();
+    let emoji_file = temp_dir.path().join("📝笔记.md");
+    write_file(&emoji_file, "# Notes 🎉\n\n[link](📎附件.md)\n");
+
+    let result = find_links(&emoji_file).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].link_text, "📎附件.md");
+}
+
+/// Test find_references with Unicode target filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_chinese_target() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create target file with Chinese name
+    let target = temp_dir.path().join("目标文件.md");
+    write_file(&target, "# 目标");
+
+    // Create referrer file
+    let referrer = temp_dir.path().join("引用者.md");
+    write_file(&referrer, "请参考 [目标文件](目标文件.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+    assert_eq!(result.len(), 1);
+    assert_eq!(result[0].link_text, "目标文件.md");
+}
+
+/// Test find_references with Unicode path containing Chinese directory names.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_unicode_path() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create nested directory with Chinese name
+    let target = temp_dir.path().join("文档库").join("参考资料.md");
+    write_file(&target, "# 参考资料");
+
+    // Create referrer in root
+    let referrer = temp_dir.path().join("索引.md");
+    write_file(&referrer, "查看 [参考资料](文档库/参考资料.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+    assert_eq!(result.len(), 1);
+}
+
+/// Test find_links with Unicode content and links.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_unicode_content() {
+    let temp_dir = TempDir::new().unwrap();
+    let file = temp_dir.path().join("mixed.md");
+    write_file(
+        &file,
+        "# Mixed Content 混合内容\n\n[中文链接](中文目标.md) [日本語リンク](日本語.md) [한글](한글.md)\n",
+    );
+
+    let result = find_links(&file).unwrap();
+    assert_eq!(result.len(), 3);
+
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    assert!(link_texts.contains(&"中文目标.md"));
+    assert!(link_texts.contains(&"日本語.md"));
+    assert!(link_texts.contains(&"한글.md"));
+}

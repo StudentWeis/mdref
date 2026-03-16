@@ -2135,3 +2135,199 @@ fn test_mv_file_multiple_link_reference_definitions_same_file() {
         ref_content
     );
 }
+
+// ============= Unicode mv tests =============
+
+/// Test moving file with Chinese filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_chinese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("源文件.md");
+    write_file(&source_file, "# 中文文档");
+
+    let target_file = temp_dir.path().join("目标文件.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(target_file.exists());
+    assert!(!source_file.exists());
+}
+
+/// Test moving file with Chinese filename to subdirectory.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_chinese_to_subdirectory() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("文档.md");
+    write_file(&source_file, "# 文档内容");
+
+    let target_file = temp_dir.path().join("子目录").join("归档文档.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+}
+
+/// Test moving file and updating references with Unicode paths.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_unicode_updates_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("原始文档.md");
+    write_file(&source_file, "# 原始文档");
+
+    let ref_file = temp_dir.path().join("索引.md");
+    write_file(&ref_file, "请查看 [原始文档](原始文档.md) 获取更多信息。");
+
+    let target_file = temp_dir.path().join("归档").join("更新文档.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("归档/更新文档.md"),
+        "Reference should be updated. Got: {}",
+        ref_content
+    );
+}
+
+/// Test moving file with Japanese filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_japanese_filename() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("元ファイル.md");
+    write_file(&source_file, "# ドキュメント");
+
+    let target_file = temp_dir.path().join("新ファイル.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+}
+
+/// Test moving file with emoji in filename.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_emoji_filename() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("📝笔记.md");
+    write_file(&source_file, "# Notes");
+
+    let target_file = temp_dir.path().join("📚归档").join("📝笔记.md");
+    fs::create_dir_all(target_file.parent().unwrap()).unwrap();
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+    assert!(target_file.exists());
+}
+
+/// Test moving file updates internal Unicode links.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_updates_internal_unicode_links() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create sibling file
+    let other_file = temp_dir.path().join("其他文档.md");
+    write_file(&other_file, "# 其他");
+
+    // Create source with internal link
+    let source_file = temp_dir.path().join("主页.md");
+    write_file(&source_file, "参见 [其他文档](其他文档.md)");
+
+    // Move to subdirectory
+    let target_file = temp_dir.path().join("子目录").join("主页.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok());
+
+    let moved_content = fs::read_to_string(&target_file).unwrap();
+    assert!(
+        moved_content.contains("../其他文档.md"),
+        "Internal link should be updated. Got: {}",
+        moved_content
+    );
+}
+
+/// Test dry-run with Unicode filenames should not modify anything.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_file_unicode_dry_run() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("测试文件.md");
+    write_file(&source_file, "# 测试");
+
+    let ref_file = temp_dir.path().join("引用.md");
+    let original_content = "参考 [测试文件](测试文件.md)";
+    write_file(&ref_file, original_content);
+
+    let target_file = temp_dir.path().join("新位置").join("测试文件.md");
+
+    let result = mv_file(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        true,
+    );
+
+    assert!(result.is_ok());
+    assert!(
+        source_file.exists(),
+        "Source should still exist after dry-run"
+    );
+    assert!(
+        !target_file.exists(),
+        "Target should not be created during dry-run"
+    );
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(
+        ref_content, original_content,
+        "Dry-run should not modify reference file"
+    );
+}
