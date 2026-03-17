@@ -2086,6 +2086,68 @@ fn test_mv_updates_link_reference_definition_with_title() {
     );
 }
 
+/// Moving a file referenced by an angle-bracket reference definition should preserve the brackets.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_updates_link_reference_definition_with_angle_brackets() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[text][ref]\n\n[ref]: <target.md>");
+
+    let target_file = temp_dir.path().join("sub").join("target.md");
+
+    let result = mv(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("[ref]: <sub/target.md>"),
+        "Angle-bracket reference definition should be updated in place. Got: {}",
+        ref_content
+    );
+}
+
+/// Moving a file referenced by a spaced reference definition should preserve the spacing.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_updates_link_reference_definition_with_extra_spaces() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[text][ref]\n\n[ref]:    target.md");
+
+    let target_file = temp_dir.path().join("sub").join("target.md");
+
+    let result = mv(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(
+        ref_content.contains("[ref]:    sub/target.md"),
+        "Reference definition spacing should be preserved. Got: {}",
+        ref_content
+    );
+}
+
 /// Moving a file with both inline links and link reference definitions referencing it.
 #[test]
 #[allow(clippy::unwrap_used)]

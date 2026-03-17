@@ -2,6 +2,7 @@ use comrak::Arena;
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::parse_document;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -51,10 +52,12 @@ fn process_md_file(
 ) -> Vec<Reference> {
     let arena = Arena::new();
     let root = parse_document(&arena, content, &comrak::Options::default());
+    let ignored_lines = collect_ignored_reference_definition_lines(root);
 
     // Step 1: Collect link reference definitions from raw text.
-    // These are not represented as AST nodes by comrak.
-    let ref_defs = parse_link_reference_definitions(content);
+    // These are not represented as AST nodes by comrak, so we scan raw text
+    // but skip source ranges that comrak identified as code blocks.
+    let ref_defs = parse_link_reference_definitions(content, &ignored_lines);
 
     // Step 2: Collect inline links from the AST, skipping those that are
     // reference-style links (their URL comes from a definition line).
@@ -86,11 +89,17 @@ fn process_md_file(
 ///
 /// Returns a vector of `(line_number, url, column)` tuples.
 /// `line_number` is 1-based. `column` is the 1-based column of the `[` character.
-fn parse_link_reference_definitions(content: &str) -> Vec<(usize, String, usize)> {
+fn parse_link_reference_definitions(
+    content: &str,
+    ignored_lines: &HashSet<usize>,
+) -> Vec<(usize, String, usize)> {
     let mut definitions = Vec::new();
 
     for (line_index, line) in content.lines().enumerate() {
         let line_number = line_index + 1;
+        if ignored_lines.contains(&line_number) {
+            continue;
+        }
 
         // Link reference definitions may have up to 3 leading spaces.
         let trimmed = line.trim_start();
@@ -148,6 +157,29 @@ fn parse_link_reference_definitions(content: &str) -> Vec<(usize, String, usize)
     }
 
     definitions
+}
+
+fn collect_ignored_reference_definition_lines<'a>(root: &'a AstNode<'a>) -> HashSet<usize> {
+    let mut ignored_lines = HashSet::new();
+    collect_code_block_lines(root, &mut ignored_lines);
+    ignored_lines
+}
+
+fn collect_code_block_lines<'a>(node: &'a AstNode<'a>, ignored_lines: &mut HashSet<usize>) {
+    let data = node.data.borrow();
+    let sourcepos = data.sourcepos;
+    let is_code_block = matches!(data.value, NodeValue::CodeBlock(_));
+    drop(data);
+
+    if is_code_block && sourcepos.start.line > 0 && sourcepos.end.line >= sourcepos.start.line {
+        for line in sourcepos.start.line..=sourcepos.end.line {
+            ignored_lines.insert(line);
+        }
+    }
+
+    for child in node.children() {
+        collect_code_block_lines(child, ignored_lines);
+    }
 }
 
 /// Recursively collect links from the AST.
@@ -849,6 +881,39 @@ mod tests {
                 .iter()
                 .map(|r| (r.line, r.column))
                 .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_process_md_file_ignores_link_reference_definition_in_fenced_code_block() {
+        let content = "```md\n[text][ref]\n\n[ref]: ./file.md\n```\n";
+        let results = process_md_file(content, Path::new("test.md"), None);
+
+        assert!(
+            results.is_empty(),
+            "Link reference definitions inside fenced code blocks should be ignored. Got: {:?}",
+            results
+                .iter()
+                .map(|r| (&r.link_text, r.line, r.column))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_process_md_file_keeps_link_reference_definition_outside_fenced_code_block() {
+        let content = "```md\n[text][ref]\n\n[ref]: ./ignored.md\n```\n\n[real]: ./file.md\n";
+        let results = process_md_file(content, Path::new("test.md"), None);
+
+        let link_texts: Vec<&str> = results.iter().map(|r| r.link_text.as_str()).collect();
+        assert!(
+            link_texts.contains(&"./file.md"),
+            "Should still collect reference definitions outside fenced code blocks. Got: {:?}",
+            link_texts
+        );
+        assert!(
+            !link_texts.contains(&"./ignored.md"),
+            "Definitions inside fenced code blocks should still be ignored. Got: {:?}",
+            link_texts
         );
     }
 }

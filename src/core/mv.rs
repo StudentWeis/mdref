@@ -10,6 +10,7 @@ use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references
 
 type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
 type SnapshotPaths = Vec<PathBuf>;
+type LineCache = HashMap<PathBuf, Vec<String>>;
 
 // LinkReplacement and MoveTransaction are now defined in the model module
 
@@ -142,6 +143,7 @@ fn plan_external_replacements(
     resolved_dest: &Path,
 ) -> Result<ReplacementPlan> {
     let mut replacements_by_file: ReplacementPlan = HashMap::new();
+    let mut line_cache = LineCache::new();
 
     for reference in references {
         let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
@@ -152,39 +154,17 @@ fn plan_external_replacements(
             None => new_link_path.display().to_string(),
         };
 
-        let (old_pattern, new_pattern) = build_replacement_patterns(
-            &reference.link_type,
-            &reference.link_text,
-            &new_link_with_anchor,
-        );
-
         replacements_by_file
             .entry(reference.path.clone())
             .or_default()
-            .push(LinkReplacement {
-                line: reference.line,
-                column: reference.column,
-                old_pattern,
-                new_pattern,
-            });
+            .push(build_replacement(
+                reference,
+                &new_link_with_anchor,
+                &mut line_cache,
+            )?);
     }
 
     Ok(replacements_by_file)
-}
-
-/// Build the old/new replacement pattern pair based on the link type.
-///
-/// - For inline links (`[text](url)`), the pattern is `](url)`.
-/// - For reference definitions (`[label]: url`), the pattern is `]: url`.
-fn build_replacement_patterns(
-    link_type: &LinkType,
-    old_url: &str,
-    new_url: &str,
-) -> (String, String) {
-    match link_type {
-        LinkType::Inline => (format!("]({})", old_url), format!("]({})", new_url)),
-        LinkType::ReferenceDefinition => (format!("]: {}", old_url), format!("]: {}", new_url)),
-    }
 }
 
 /// Collect all link replacements needed for internal links within the moved file itself.
@@ -195,9 +175,12 @@ fn plan_internal_replacements(
 ) -> Result<Vec<LinkReplacement>> {
     let links = find_links(scan_path)?;
     let mut replacements = Vec::new();
+    let mut line_cache = LineCache::new();
 
     for link in &links {
-        if let Some(replacement) = build_link_replacement(link, source, resolved_dest)? {
+        if let Some(replacement) =
+            build_link_replacement(link, source, resolved_dest, &mut line_cache)?
+        {
             replacements.push(replacement);
         }
     }
@@ -296,6 +279,7 @@ fn build_replacement_for_target(
     reference: &Reference,
     file_after_move: &Path,
     new_target: &Path,
+    line_cache: &mut LineCache,
 ) -> Result<LinkReplacement> {
     let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
     let new_link_path = relative_path(file_after_move, new_target)?;
@@ -305,18 +289,7 @@ fn build_replacement_for_target(
         None => new_link_path.display().to_string(),
     };
 
-    let (old_pattern, new_pattern) = build_replacement_patterns(
-        &reference.link_type,
-        &reference.link_text,
-        &new_link_with_anchor,
-    );
-
-    Ok(LinkReplacement {
-        line: reference.line,
-        column: reference.column,
-        old_pattern,
-        new_pattern,
-    })
+    build_replacement(reference, &new_link_with_anchor, line_cache)
 }
 
 fn plan_directory_replacements(
@@ -329,6 +302,7 @@ fn plan_directory_replacements(
         build_directory_path_mappings(source_dir, source_canonical, dest_canonical)?;
     let mut replacements_by_file: ReplacementPlan = HashMap::new();
     let mut snapshot_paths: HashSet<PathBuf> = HashSet::new();
+    let mut line_cache = LineCache::new();
 
     for reference in find_references(source_dir, root)? {
         let (link_path_only, _) = split_link_and_anchor(&reference.link_text);
@@ -341,7 +315,12 @@ fn plan_directory_replacements(
 
         let file_after_move =
             remap_existing_path(&reference.path, source_canonical, &path_mappings)?;
-        let replacement = build_replacement_for_target(&reference, &file_after_move, new_target)?;
+        let replacement = build_replacement_for_target(
+            &reference,
+            &file_after_move,
+            new_target,
+            &mut line_cache,
+        )?;
 
         replacements_by_file
             .entry(file_after_move)
@@ -365,7 +344,12 @@ fn plan_directory_replacements(
                 continue;
             }
 
-            let replacement = build_replacement_for_target(&link, &file_after_move, &target_path)?;
+            let replacement = build_replacement_for_target(
+                &link,
+                &file_after_move,
+                &target_path,
+                &mut line_cache,
+            )?;
             replacements_by_file
                 .entry(file_after_move.clone())
                 .or_default()
@@ -578,6 +562,7 @@ fn build_link_replacement(
     r: &Reference,
     raw_filepath: &Path,
     new_filepath: &Path,
+    line_cache: &mut LineCache,
 ) -> Result<Option<LinkReplacement>> {
     // External URLs (https://, http://, etc.) are not local file paths
     // and should not be rewritten during a file move.
@@ -637,15 +622,110 @@ fn build_link_replacement(
         None => new_link_path.display().to_string(),
     };
 
-    let (old_pattern, new_pattern) =
-        build_replacement_patterns(&r.link_type, &r.link_text, &new_link_with_anchor);
+    Ok(Some(build_replacement(
+        r,
+        &new_link_with_anchor,
+        line_cache,
+    )?))
+}
 
-    Ok(Some(LinkReplacement {
-        line: r.line,
-        column: r.column,
-        old_pattern,
-        new_pattern,
-    }))
+fn build_replacement(
+    reference: &Reference,
+    new_url: &str,
+    line_cache: &mut LineCache,
+) -> Result<LinkReplacement> {
+    match reference.link_type {
+        LinkType::Inline => Ok(LinkReplacement {
+            line: reference.line,
+            column: reference.column,
+            old_pattern: format!("]({})", reference.link_text),
+            new_pattern: format!("]({})", new_url),
+        }),
+        LinkType::ReferenceDefinition => {
+            build_reference_definition_replacement(reference, new_url, line_cache)
+        }
+    }
+}
+
+fn build_reference_definition_replacement(
+    reference: &Reference,
+    new_url: &str,
+    line_cache: &mut LineCache,
+) -> Result<LinkReplacement> {
+    let line = get_cached_line(&reference.path, reference.line, line_cache)?;
+    let (url_start, url_end) = find_reference_definition_url_span(line).ok_or_else(|| {
+        MdrefError::Path(format!(
+            "Could not parse reference definition in line {} of file {}",
+            reference.line,
+            reference.path.display()
+        ))
+    })?;
+
+    Ok(LinkReplacement {
+        line: reference.line,
+        column: url_start + 1,
+        old_pattern: line[url_start..url_end].to_string(),
+        new_pattern: new_url.to_string(),
+    })
+}
+
+fn get_cached_line<'a>(
+    path: &Path,
+    line_number: usize,
+    line_cache: &'a mut LineCache,
+) -> Result<&'a str> {
+    let lines = match line_cache.entry(path.to_path_buf()) {
+        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            let content = fs::read_to_string(path)?;
+            entry.insert(content.lines().map(|line| line.to_string()).collect())
+        }
+    };
+
+    if line_number == 0 || line_number > lines.len() {
+        return Err(MdrefError::InvalidLine(format!(
+            "Line number {} out of range for file {}",
+            line_number,
+            path.display()
+        )));
+    }
+
+    Ok(lines[line_number - 1].as_str())
+}
+
+fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
+    let trimmed = line.trim_start();
+    let leading_spaces = line.len() - trimmed.len();
+    if leading_spaces > 3 || !trimmed.starts_with('[') {
+        return None;
+    }
+
+    let label_end = trimmed.find("]:")?;
+    if label_end == 0 {
+        return None;
+    }
+
+    let after_colon_start = leading_spaces + label_end + 2;
+    let after_colon = &line[after_colon_start..];
+    let trimmed_after_colon = after_colon.trim_start();
+    if trimmed_after_colon.is_empty() {
+        return None;
+    }
+
+    let leading_after_colon = after_colon.len() - trimmed_after_colon.len();
+    let url_start = after_colon_start + leading_after_colon;
+
+    if let Some(stripped) = trimmed_after_colon.strip_prefix('<') {
+        let end = stripped.find('>')?;
+        let inner_start = url_start + 1;
+        let inner_end = inner_start + end;
+        Some((inner_start, inner_end))
+    } else {
+        let end = trimmed_after_colon
+            .find(char::is_whitespace)
+            .unwrap_or(trimmed_after_colon.len());
+        Some((url_start, url_start + end))
+    }
 }
 
 /// Apply all pending replacements to a single file in one read-write cycle.
@@ -969,7 +1049,8 @@ mod tests {
 
         let reference = Reference::new(target.clone(), 1, 1, "other.md#details".to_string());
 
-        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        let mut line_cache = LineCache::new();
+        let result = build_link_replacement(&reference, &source, &target, &mut line_cache).unwrap();
         assert!(
             result.is_some(),
             "Should produce a replacement for anchored link"
@@ -995,7 +1076,8 @@ mod tests {
         let reference = Reference::new(target.clone(), 1, 1, "nonexistent.md".to_string());
 
         // Should return Ok(None) for broken links, not Err
-        let result = build_link_replacement(&reference, &source, &target);
+        let mut line_cache = LineCache::new();
+        let result = build_link_replacement(&reference, &source, &target, &mut line_cache);
         assert!(
             result.is_ok(),
             "build_link_replacement should not error on broken links: {:?}",
@@ -1021,7 +1103,8 @@ mod tests {
         let reference = Reference::new(target.clone(), 1, 1, "#section".to_string());
 
         // Pure anchor links are internal to the file and should not be rewritten
-        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        let mut line_cache = LineCache::new();
+        let result = build_link_replacement(&reference, &source, &target, &mut line_cache).unwrap();
         assert!(
             result.is_none(),
             "Pure anchor link (#section) should be skipped, but got: {:?}",
@@ -1040,7 +1123,8 @@ mod tests {
 
         let reference = Reference::new(target.clone(), 1, 1, "#table-of-contents".to_string());
 
-        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        let mut line_cache = LineCache::new();
+        let result = build_link_replacement(&reference, &source, &target, &mut line_cache).unwrap();
         assert!(
             result.is_none(),
             "Pure anchor link (#table-of-contents) should be skipped"
@@ -1061,11 +1145,20 @@ mod tests {
         let reference = Reference::new(target.clone(), 1, 1, "https://google.com".to_string());
 
         // Should return None — external URL is skipped
-        let result = build_link_replacement(&reference, &source, &target).unwrap();
+        let mut line_cache = LineCache::new();
+        let result = build_link_replacement(&reference, &source, &target, &mut line_cache).unwrap();
         assert!(result.is_none());
 
         // Content should remain unchanged
         let content = fs::read_to_string(&target).unwrap();
         assert!(content.contains("https://google.com"));
+    }
+
+    #[test]
+    fn test_find_reference_definition_url_span_preserves_angle_brackets_and_spacing() {
+        let line = "[ref]:    <target.md> \"Title\"";
+        let span = find_reference_definition_url_span(line).unwrap();
+
+        assert_eq!(&line[span.0..span.1], "target.md");
     }
 }
