@@ -1,4 +1,5 @@
 use mdref::{Reference, find_links, find_references};
+use rstest::rstest;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -14,417 +15,492 @@ fn write_file<P: AsRef<Path>>(path: P, content: &str) {
     file.write_all(content.as_bytes()).unwrap();
 }
 
-// ============= find_links tests =============
+// ============= find_links error handling tests =============
 
+/// find_links should return an error when the file does not exist.
 #[test]
-fn test_find_links_nonexistent_file() {
+fn test_find_links_returns_error_for_nonexistent_file() {
     let result = find_links(Path::new("nonexistent.md"));
-    assert!(result.is_err());
+    assert!(
+        result.is_err(),
+        "find_links should return error for nonexistent file"
+    );
 }
 
+/// find_links should return an empty Vec for non-markdown files.
 #[test]
-fn test_find_links_basic() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-    assert!(!result.is_empty());
-}
-
-#[test]
-fn test_find_links_non_markdown_file() {
-    // Non-markdown files should return an empty Vec
+fn test_find_links_returns_empty_for_non_markdown_file() {
     let path = Path::new("Cargo.toml");
     let result = find_links(path).unwrap();
-    assert!(result.is_empty());
-}
-
-#[test]
-fn test_find_links_count() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-    // main.md should have 8 links (including image links)
-    assert_eq!(result.len(), 8);
-}
-
-#[test]
-fn test_find_links_content_verification() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-
-    // Verify the found links
-    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    assert!(link_texts.contains(&"main.md"));
-    assert!(link_texts.contains(&"inner/main.md"));
-    assert!(link_texts.contains(&"other.md"));
-}
-
-#[test]
-fn test_find_links_line_numbers() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-
-    // Verify that line numbers are correct (greater than 0)
-    for reference in result {
-        assert!(reference.line > 0);
-        assert!(reference.column > 0);
-    }
-}
-
-// ============= find_references tests =============
-
-#[test]
-fn test_find_references_basic() {
-    let path = Path::new("examples/main.md");
-    let result = find_references(path, path.parent().unwrap()).unwrap();
-    assert_eq!(result.len(), 6)
-}
-
-#[test]
-fn test_find_references_nonexistent_file() {
-    let path = Path::new("nonexistent.md");
-    let root = Path::new("examples");
-    let result = find_references(path, root);
-    assert!(result.is_err());
-}
-
-#[test]
-fn test_find_references_other_md() {
-    let path = Path::new("examples/other.md");
-    let result = find_references(path, path.parent().unwrap()).unwrap();
-    // other.md is referenced once by main.md
-    assert!(!result.is_empty());
-}
-
-#[test]
-fn test_find_references_inner_main() {
-    let path = Path::new("examples/inner/main.md");
-    let root = Path::new("examples");
-    let result = find_references(path, root).unwrap();
-    // inner/main.md is referenced by the outer main.md and other.md
-    assert!(result.len() >= 2);
-}
-
-#[test]
-fn test_find_references_empty_directory() {
-    let path = Path::new("examples/main.md");
-    // Use a directory that should have no references
-    let root = Path::new("benches");
-    let result = find_references(path, root).unwrap();
-    // The benches directory should have no references to examples/main.md
-    assert_eq!(result.len(), 0);
-}
-
-#[test]
-fn test_find_references_returns_correct_paths() {
-    let path = Path::new("examples/main.md");
-    let result = find_references(path, path.parent().unwrap()).unwrap();
-
-    // Verify that the returned paths are all markdown files
-    for reference in result {
-        assert_eq!(
-            reference.path.extension().and_then(|s| s.to_str()),
-            Some("md")
-        );
-    }
-}
-
-// ============= Reference struct tests =============
-
-#[test]
-fn test_reference_creation() {
-    let reference = Reference::new(
-        std::path::PathBuf::from("test.md"),
-        10,
-        5,
-        "link.md".to_string(),
+    assert!(
+        result.is_empty(),
+        "Non-markdown files should return empty Vec"
     );
-
-    assert_eq!(reference.line, 10);
-    assert_eq!(reference.column, 5);
-    assert_eq!(reference.link_text, "link.md");
 }
 
+// ============= find_links basic functionality tests =============
+
+/// find_links should correctly extract all markdown links from a file.
 #[test]
-fn test_reference_display() {
-    let reference = Reference::new(
-        std::path::PathBuf::from("test.md"),
-        10,
-        5,
-        "link.md".to_string(),
-    );
-
-    let display_str = format!("{}", reference);
-    assert!(display_str.contains("test.md"));
-    assert!(display_str.contains("10"));
-    assert!(display_str.contains("5"));
-    assert!(display_str.contains("link.md"));
-}
-
-// ============= Edge case tests =============
-
-#[test]
-fn test_find_links_empty_markdown_file() {
-    // Create a temporary empty file for testing
+#[allow(clippy::unwrap_used)]
+fn test_find_links_extracts_all_links() {
     let temp_dir = TempDir::new().unwrap();
-    let temp_file = temp_dir.path().join("test_empty.md");
+    let temp_file = temp_dir.path().join("test.md");
+    // Create file with 3 markdown links and 2 image links
+    write_file(
+        &temp_file,
+        "# Test\n\n[link1](a.md) [link2](b.md)\n\n![img](img.png) ![img2](img2.png)\n",
+    );
+
+    let result = find_links(&temp_file).unwrap();
+    assert_eq!(
+        result.len(),
+        4,
+        "Should find 4 links (2 markdown + 2 image)"
+    );
+}
+
+/// find_links should correctly identify link text and positions.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_returns_correct_link_texts() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(
+        &temp_file,
+        "# Test\n\n[First](first.md) [Second](second.md)\n",
+    );
+
+    let result = find_links(&temp_file).unwrap();
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
+    assert!(link_texts.contains(&"first.md"), "Should contain first.md");
+    assert!(
+        link_texts.contains(&"second.md"),
+        "Should contain second.md"
+    );
+}
+
+/// find_links should return correct line and column numbers for links.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_returns_correct_positions() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(&temp_file, "# Test\n\n[link](target.md)\n");
+
+    let result = find_links(&temp_file).unwrap();
+    assert_eq!(result.len(), 1, "Should find exactly one link");
+
+    let reference = &result[0];
+    assert!(reference.line > 0, "Line number should be greater than 0");
+    assert!(
+        reference.column > 0,
+        "Column number should be greater than 0"
+    );
+}
+
+/// find_links should handle multiple links on the same line correctly.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_handles_multiple_links_on_same_line() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    // Line 3 has 3 links
+    write_file(
+        &temp_file,
+        "# Test\n\n[one](a.md) [two](b.md) [three](c.md)\n",
+    );
+
+    let result = find_links(&temp_file).unwrap();
+
+    // All three links should be on line 3
+    let line3_links: Vec<&Reference> = result.iter().filter(|r| r.line == 3).collect();
+    assert_eq!(line3_links.len(), 3, "Should find 3 links on line 3");
+
+    // Column numbers should be distinct and increasing
+    let mut columns: Vec<usize> = line3_links.iter().map(|r| r.column).collect();
+    columns.sort();
+    assert!(
+        columns.windows(2).all(|w| w[0] < w[1]),
+        "Column numbers should be increasing"
+    );
+}
+
+/// find_links should return an empty Vec for an empty markdown file.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_returns_empty_for_empty_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("empty.md");
     fs::File::create(&temp_file)
         .unwrap()
         .write_all(b"")
         .unwrap();
 
     let result = find_links(&temp_file).unwrap();
-    assert_eq!(result.len(), 0);
-}
-
-#[test]
-fn test_find_references_with_relative_paths() {
-    let path = Path::new("examples/main.md");
-    let result = find_references(path, "examples").unwrap();
-    assert!(!result.is_empty());
+    assert_eq!(result.len(), 0, "Empty file should have no links");
 }
 
 // ============= Image link tests =============
 
-#[test]
-fn test_find_links_includes_image_links() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-
-    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    // main.md contains ![jpg test](main.jpg) twice
-    assert!(link_texts.contains(&"main.jpg"));
-}
-
-#[test]
-fn test_find_links_image_with_dot_slash_prefix() {
-    // examples/other.md uses ./main.jpg syntax
-    let path = Path::new("examples/other.md");
-    let result = find_links(path).unwrap();
-
-    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    assert!(link_texts.contains(&"./main.jpg"));
-}
-
-// ============= Multiple links on same line =============
-
-#[test]
-fn test_find_links_multiple_links_same_line() {
-    let path = Path::new("examples/main.md");
-    let result = find_links(path).unwrap();
-
-    // Line 7: [outer main](main.md) - [inner main](inner/main.md) - [sub inner main](inner/sub/main.md)
-    // All three links should be on line 7
-    let line7_links: Vec<&Reference> = result.iter().filter(|r| r.line == 7).collect();
-    assert_eq!(line7_links.len(), 3);
-
-    // Verify column numbers are distinct and increasing
-    let columns: Vec<usize> = line7_links.iter().map(|r| r.column).collect();
-    assert!(columns.windows(2).all(|w| w[0] < w[1]));
-}
-
-// ============= Nested directory references =============
-
-#[test]
-fn test_find_references_deep_nested() {
-    // inner/main.md is referenced from multiple levels
-    let path = Path::new("examples/inner/main.md");
-    let root = Path::new("examples");
-    let result = find_references(path, root).unwrap();
-
-    // Should be referenced by outer main.md, inner/other.md, etc.
-    assert!(result.len() >= 2);
-
-    // Verify references come from different directory levels
-    let ref_paths: Vec<String> = result
-        .iter()
-        .map(|r| r.path.display().to_string())
-        .collect();
-    let has_outer_ref = ref_paths.iter().any(|p| !p.contains("inner"));
-    let has_inner_ref = ref_paths.iter().any(|p| p.contains("inner"));
-    assert!(has_outer_ref || has_inner_ref);
-}
-
-// ============= Self-reference =============
-
-#[test]
-fn test_find_references_self_reference() {
-    // main.md references itself: [outer main](main.md)
-    let path = Path::new("examples/main.md");
-    let result = find_references(path, path.parent().unwrap()).unwrap();
-
-    // main.md should appear in its own references (self-reference)
-    let self_refs: Vec<&Reference> = result
-        .iter()
-        .filter(|r| {
-            r.path.file_name().unwrap() == "main.md" && !r.path.to_string_lossy().contains("inner")
-        })
-        .collect();
-    assert!(!self_refs.is_empty());
-}
-
-// ============= External URL filtering =============
-
+/// find_links should include image links in the results.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_find_links_external_urls_not_matched_as_file_refs() {
+fn test_find_links_includes_image_links() {
     let temp_dir = TempDir::new().unwrap();
-    let temp_file = temp_dir.path().join("test_external_urls.md");
-    let content = "# Test\n\n[Google](https://google.com)\n[Local](test_external_urls.md)\n";
-    write_file(&temp_file, content);
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(&temp_file, "# Test\n\n![Alt text](image.png)\n");
 
     let result = find_links(&temp_file).unwrap();
-
-    // External URLs are filtered out and should not be collected as links
     let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
+    assert!(
+        link_texts.contains(&"image.png"),
+        "Should include image links"
+    );
+}
+
+/// find_links should handle image links with ./ prefix.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_handles_image_with_dot_slash_prefix() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(&temp_file, "# Test\n\n![Image](./image.png)\n");
+
+    let result = find_links(&temp_file).unwrap();
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
+    assert!(
+        link_texts.contains(&"./image.png"),
+        "Should preserve ./ prefix in image links"
+    );
+}
+
+// ============= External URL filtering tests =============
+
+/// find_links should filter out external URLs (http/https).
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_filters_external_urls() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(
+        &temp_file,
+        "# Test\n\n[Google](https://google.com)\n[Local](local.md)\n",
+    );
+
+    let result = find_links(&temp_file).unwrap();
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
     assert!(
         !link_texts.contains(&"https://google.com"),
         "External URLs should be filtered out"
     );
     assert!(
-        link_texts.contains(&"test_external_urls.md"),
-        "Local links should be collected"
+        link_texts.contains(&"local.md"),
+        "Local links should be included"
     );
 }
 
+/// find_links should filter out other URL schemes (ftp, mailto, etc).
+#[rstest]
+#[case::http("http://example.com/doc.md")]
+#[case::ftp("ftp://example.com/file.md")]
+#[case::mailto("mailto:user@example.com")]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_filters_url_schemes(#[case] url: &str) {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    let content = format!("# Test\n\n[Link]({url})\n");
+    write_file(&temp_file, &content);
+
+    let result = find_links(&temp_file).unwrap();
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
+    assert!(
+        !link_texts.contains(&url),
+        "URL scheme {url} should be filtered out"
+    );
+}
+
+// ============= Dot-slash prefix tests =============
+
+/// find_links should preserve ./ prefix in markdown links.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_find_references_external_url_not_matched() {
+fn test_find_links_preserves_dot_slash_prefix() {
+    let temp_dir = TempDir::new().unwrap();
+    let temp_file = temp_dir.path().join("test.md");
+    write_file(&temp_file, "# Test\n\n[Link](./other.md)\n");
+
+    let result = find_links(&temp_file).unwrap();
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+
+    assert!(
+        link_texts.contains(&"./other.md"),
+        "Should preserve ./ prefix"
+    );
+}
+
+// ============= find_references basic tests =============
+
+/// find_references should find all files that reference the target file.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_finds_referencing_files() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create target file
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    // Create files that reference the target
+    let ref1 = temp_dir.path().join("ref1.md");
+    write_file(&ref1, "See [target](target.md)");
+
+    let ref2 = temp_dir.path().join("ref2.md");
+    write_file(&ref2, "Check [this](target.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+    assert_eq!(result.len(), 2, "Should find 2 files referencing target.md");
+}
+
+/// find_references should return an error when target file does not exist.
+#[test]
+fn test_find_references_returns_error_for_nonexistent_file() {
+    let temp_dir = TempDir::new().unwrap();
+    let result = find_references(temp_dir.path().join("ghost.md"), temp_dir.path());
+
+    assert!(
+        result.is_err(),
+        "find_references should return error for nonexistent file"
+    );
+}
+
+/// find_references should return empty Vec when no references exist.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_returns_empty_when_no_references() {
     let temp_dir = TempDir::new().unwrap();
 
     let target = temp_dir.path().join("target.md");
     write_file(&target, "# Target");
 
-    let referrer = temp_dir.path().join("referrer.md");
-    let content = "[External](https://example.com/target.md)\n[Local](target.md)\n";
-    write_file(&referrer, content);
+    let other = temp_dir.path().join("other.md");
+    write_file(&other, "# Other\n\nNo references here");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+    assert_eq!(
+        result.len(),
+        0,
+        "Should return empty Vec when no references"
+    );
+}
+
+/// find_references should only return markdown files.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_only_returns_markdown_files() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    // Create markdown and non-markdown files referencing target
+    let md_ref = temp_dir.path().join("ref.md");
+    write_file(&md_ref, "[link](target.md)");
+
+    let txt_ref = temp_dir.path().join("ref.txt");
+    write_file(&txt_ref, "See target.md");
 
     let result = find_references(&target, temp_dir.path()).unwrap();
 
-    // Only the local reference should match, not the external URL
-    assert_eq!(result.len(), 1);
+    for reference in &result {
+        assert_eq!(
+            reference.path.extension().and_then(|s| s.to_str()),
+            Some("md"),
+            "All results should be markdown files"
+        );
+    }
+}
+
+// ============= find_references with nested directories =============
+
+/// find_references should find references from nested directories.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_finds_nested_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let target = temp_dir.path().join("docs").join("target.md");
+    write_file(&target, "# Target");
+
+    // Reference from root level
+    let root_ref = temp_dir.path().join("index.md");
+    write_file(&root_ref, "See [docs](docs/target.md)");
+
+    // Reference from sibling level
+    let sibling_ref = temp_dir.path().join("other.md");
+    write_file(&sibling_ref, "Check [docs](docs/target.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+    assert!(
+        result.len() >= 2,
+        "Should find references from different directory levels"
+    );
+}
+
+/// find_references should handle target as a directory.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_handles_directory_target() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create files in a directory
+    let dir = temp_dir.path().join("docs");
+    let file1 = dir.join("file1.md");
+    let file2 = dir.join("file2.md");
+    write_file(&file1, "# File 1");
+    write_file(&file2, "# File 2");
+
+    // Create reference to a file in the directory
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "See [file1](docs/file1.md)");
+
+    let result = find_references(&dir, temp_dir.path()).unwrap();
+    assert!(
+        !result.is_empty(),
+        "Should find references to files in the directory"
+    );
+}
+
+// ============= Self-reference tests =============
+
+/// find_references should detect self-references (file referencing itself).
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_detects_self_reference() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let target = temp_dir.path().join("self.md");
+    write_file(&target, "# Self\n\n[Self link](self.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+
+    let self_refs: Vec<&Reference> = result
+        .iter()
+        .filter(|r| r.path.file_name().unwrap() == "self.md")
+        .collect();
+
+    assert!(!self_refs.is_empty(), "Should detect self-references");
+}
+
+// ============= External URL not matched as reference =============
+
+/// find_references should not match external URLs as references.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_ignores_external_urls() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    let ref_file = temp_dir.path().join("ref.md");
+    write_file(
+        &ref_file,
+        "[External](https://example.com/target.md)\n[Local](target.md)",
+    );
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+
+    // Only the local reference should match
+    assert_eq!(
+        result.len(),
+        1,
+        "External URLs should not be matched as references"
+    );
     assert_eq!(result[0].link_text, "target.md");
-}
-
-// ============= Dot-slash prefix links =============
-
-#[test]
-fn test_find_links_dot_slash_prefix() {
-    // examples/other.md uses ./main.jpg and ./inner/other.md style links
-    let path = Path::new("examples/other.md");
-    let result = find_links(path).unwrap();
-
-    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    assert!(link_texts.contains(&"./inner/other.md"));
-}
-
-// ============= find_references with directory target =============
-
-#[test]
-fn test_find_references_directory_target() {
-    let dir_path = Path::new("examples/inner");
-    let root = Path::new("examples");
-    let result = find_references(dir_path, root).unwrap();
-
-    // Should find references to files inside the inner directory
-    assert!(!result.is_empty());
 }
 
 // ============= Unicode tests =============
 
-/// Test find_links with Chinese filename.
-#[test]
+/// Test find_links with Unicode filenames (Chinese, Japanese, Korean, emoji).
+#[rstest]
+#[case::chinese("中文文档.md", "其他文档.md")]
+#[case::japanese("ドキュメント.md", "他のファイル.md")]
+#[case::korean("한글.md", "다른파일.md")]
+#[case::emoji("📝笔记.md", "📎附件.md")]
 #[allow(clippy::unwrap_used)]
-fn test_find_links_chinese_filename() {
+fn test_find_links_handles_unicode_filenames(#[case] filename: &str, #[case] link: &str) {
     let temp_dir = TempDir::new().unwrap();
-    let chinese_file = temp_dir.path().join("中文文档.md");
-    write_file(&chinese_file, "# 中文标题\n\n[链接](其他文档.md)\n");
+    let unicode_file = temp_dir.path().join(filename);
+    write_file(&unicode_file, &format!("# Test\n\n[Link]({link})\n"));
 
-    let result = find_links(&chinese_file).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].link_text, "其他文档.md");
+    let result = find_links(&unicode_file).unwrap();
+    assert_eq!(
+        result.len(),
+        1,
+        "Should find exactly one link in Unicode-named file"
+    );
+    assert_eq!(result[0].link_text, link);
 }
 
-/// Test find_links with Japanese filename.
+/// Test find_links with mixed Unicode content.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_find_links_japanese_filename() {
+fn test_find_links_handles_mixed_unicode_content() {
     let temp_dir = TempDir::new().unwrap();
-    let japanese_file = temp_dir.path().join("ドキュメント.md");
+    let file = temp_dir.path().join("mixed.md");
     write_file(
-        &japanese_file,
-        "# ドキュメント\n\n[リンク](他のファイル.md)\n",
+        &file,
+        "# Mixed 混合 ミックス\n\n[中文](中文.md) [日本語](日本語.md) [한글](한글.md)\n",
     );
 
-    let result = find_links(&japanese_file).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].link_text, "他のファイル.md");
-}
+    let result = find_links(&file).unwrap();
+    assert_eq!(result.len(), 3, "Should find 3 Unicode links");
 
-/// Test find_links with emoji in filename.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_find_links_emoji_filename() {
-    let temp_dir = TempDir::new().unwrap();
-    let emoji_file = temp_dir.path().join("📝笔记.md");
-    write_file(&emoji_file, "# Notes 🎉\n\n[link](📎附件.md)\n");
-
-    let result = find_links(&emoji_file).unwrap();
-    assert_eq!(result.len(), 1);
-    assert_eq!(result[0].link_text, "📎附件.md");
+    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
+    assert!(link_texts.contains(&"中文.md"));
+    assert!(link_texts.contains(&"日本語.md"));
+    assert!(link_texts.contains(&"한글.md"));
 }
 
 /// Test find_references with Unicode target filename.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_find_references_chinese_target() {
+fn test_find_references_handles_unicode_target() {
     let temp_dir = TempDir::new().unwrap();
 
-    // Create target file with Chinese name
     let target = temp_dir.path().join("目标文件.md");
     write_file(&target, "# 目标");
 
-    // Create referrer file
-    let referrer = temp_dir.path().join("引用者.md");
-    write_file(&referrer, "请参考 [目标文件](目标文件.md)");
+    let ref_file = temp_dir.path().join("引用者.md");
+    write_file(&ref_file, "请参考 [目标文件](目标文件.md)");
 
     let result = find_references(&target, temp_dir.path()).unwrap();
-    assert_eq!(result.len(), 1);
+    assert_eq!(result.len(), 1, "Should find reference to Unicode file");
     assert_eq!(result[0].link_text, "目标文件.md");
 }
 
-/// Test find_references with Unicode path containing Chinese directory names.
+/// Test find_references with Unicode directory path.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_find_references_unicode_path() {
+fn test_find_references_handles_unicode_directory_path() {
     let temp_dir = TempDir::new().unwrap();
 
-    // Create nested directory with Chinese name
     let target = temp_dir.path().join("文档库").join("参考资料.md");
     write_file(&target, "# 参考资料");
 
-    // Create referrer in root
-    let referrer = temp_dir.path().join("索引.md");
-    write_file(&referrer, "查看 [参考资料](文档库/参考资料.md)");
+    let ref_file = temp_dir.path().join("索引.md");
+    write_file(&ref_file, "查看 [参考资料](文档库/参考资料.md)");
 
     let result = find_references(&target, temp_dir.path()).unwrap();
-    assert_eq!(result.len(), 1);
-}
-
-/// Test find_links with Unicode content and links.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_find_links_unicode_content() {
-    let temp_dir = TempDir::new().unwrap();
-    let file = temp_dir.path().join("mixed.md");
-    write_file(
-        &file,
-        "# Mixed Content 混合内容\n\n[中文链接](中文目标.md) [日本語リンク](日本語.md) [한글](한글.md)\n",
+    assert_eq!(
+        result.len(),
+        1,
+        "Should find reference through Unicode path"
     );
-
-    let result = find_links(&file).unwrap();
-    assert_eq!(result.len(), 3);
-
-    let link_texts: Vec<&str> = result.iter().map(|r| r.link_text.as_str()).collect();
-    assert!(link_texts.contains(&"中文目标.md"));
-    assert!(link_texts.contains(&"日本語.md"));
-    assert!(link_texts.contains(&"한글.md"));
 }

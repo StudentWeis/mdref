@@ -2,8 +2,11 @@
 applyTo: "**"
 ---
 
-- 遵循良好的 Rust 开发规范及最佳实践。
 - 最好使用 thiserror 来定义错误类型。
-- 单测中的 unwrap() 和 expect() 是被允许的，可以在单测函数上添加 #[allow(clippy::unwrap_used)]、#[allow(clippy::expect_used)] 来避免 clippy 警告。
-- 测试方法如需要创建文件必须使用 tempfile 库来创建临时文件。
 - 使用 script/precheck.sh 来检查代码质量和格式。
+
+测试相关：
+
+- 如果单测中使用了 unwrap() 和 expect()，需添加 #[allow(clippy::unwrap_used)]、#[allow(clippy::expect_used)] 来避免 clippy 警告。
+- 测试方法如需要创建文件必须使用 tempfile 库来创建临时文件。
+- 可以使用 rstest 库简化测试的编写。

@@ -207,7 +207,6 @@ project/
 - **目录回滚的降级方案**：`mv_directory` 回滚时先把目录 rename 回去再恢复文件内容。如果 rename 回滚本身失败，后续的 `fs::write` 也会全部失败。可以考虑在 rename 回滚失败时，尝试用新路径写回 snapshot 内容作为降级方案。
 - **`fs::create_dir_all` 创建的中间目录不会被清理**：如果创建了目标路径的中间目录后 rename 失败，这些空目录不会被回滚清理。
 - **`url_decode_link` 对多字节 UTF-8 percent-encoding 处理不完整**：当前逐字节解码 `%XX` 并 `as char`，对于多字节 UTF-8 字符（如 `%E4%B8%AD` 表示"中"）会产生错误结果。实际影响有限，因为中文文件名通常直接使用 Unicode 而非 percent-encoding。
-- **`snapshot_file` 使用 `read_to_string`**：对于二进制文件会失败。虽然当前只对 md 文件做 snapshot，但接口本身没有限制，未来扩展时可能踩坑。
 
 ## 十、总结
 

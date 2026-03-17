@@ -1,4 +1,5 @@
 use mdref::{find_links, find_references, mv};
+use rstest::rstest;
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -2233,16 +2234,23 @@ fn test_mv_multiple_link_reference_definitions_same_file() {
 
 // ============= Unicode mv tests =============
 
-/// Test moving file with Chinese filename.
-#[test]
+/// Test moving files with Unicode filenames (Chinese, Japanese, emoji).
+#[rstest]
+#[case::chinese("源文件.md", "目标文件.md", "# 中文文档")]
+#[case::japanese("元ファイル.md", "新ファイル.md", "# ドキュメント")]
+#[case::emoji("📝笔记.md", "📚笔记.md", "# Notes")]
 #[allow(clippy::unwrap_used)]
-fn test_mv_chinese_filename() {
+fn test_mv_unicode_filename(
+    #[case] source_name: &str,
+    #[case] target_name: &str,
+    #[case] content: &str,
+) {
     let temp_dir = TempDir::new().unwrap();
 
-    let source_file = temp_dir.path().join("源文件.md");
-    write_file(&source_file, "# 中文文档");
+    let source_file = temp_dir.path().join(source_name);
+    write_file(&source_file, content);
 
-    let target_file = temp_dir.path().join("目标文件.md");
+    let target_file = temp_dir.path().join(target_name);
 
     let result = mv(
         source_file.to_str().unwrap(),
@@ -2252,8 +2260,8 @@ fn test_mv_chinese_filename() {
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
-    assert!(target_file.exists());
-    assert!(!source_file.exists());
+    assert!(target_file.exists(), "Target file should exist");
+    assert!(!source_file.exists(), "Source file should not exist");
 }
 
 /// Test moving file with Chinese filename to subdirectory.
@@ -2307,51 +2315,6 @@ fn test_mv_unicode_updates_references() {
         "Reference should be updated. Got: {}",
         ref_content
     );
-}
-
-/// Test moving file with Japanese filename.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_mv_japanese_filename() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let source_file = temp_dir.path().join("元ファイル.md");
-    write_file(&source_file, "# ドキュメント");
-
-    let target_file = temp_dir.path().join("新ファイル.md");
-
-    let result = mv(
-        source_file.to_str().unwrap(),
-        target_file.to_str().unwrap(),
-        temp_dir.path().to_str().unwrap(),
-        false,
-    );
-
-    assert!(result.is_ok());
-    assert!(target_file.exists());
-}
-
-/// Test moving file with emoji in filename.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_mv_emoji_filename() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let source_file = temp_dir.path().join("📝笔记.md");
-    write_file(&source_file, "# Notes");
-
-    let target_file = temp_dir.path().join("📚归档").join("📝笔记.md");
-    fs::create_dir_all(target_file.parent().unwrap()).unwrap();
-
-    let result = mv(
-        source_file.to_str().unwrap(),
-        target_file.to_str().unwrap(),
-        temp_dir.path().to_str().unwrap(),
-        false,
-    );
-
-    assert!(result.is_ok());
-    assert!(target_file.exists());
 }
 
 /// Test moving file updates internal Unicode links.

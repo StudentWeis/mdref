@@ -1,4 +1,5 @@
 use mdref::rename;
+use rstest::rstest;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -170,19 +171,26 @@ fn test_rename_nonexistent_file() {
 
 // ============= Unicode rename tests =============
 
-/// Test renaming file with Chinese name to another Chinese name.
-#[test]
+/// Test renaming files with Unicode filenames (Chinese, Japanese, emoji).
+#[rstest]
+#[case::chinese("旧名称.md", "新名称.md", "# 中文文档")]
+#[case::japanese("旧文件.md", "新文件.md", "# ドキュメント")]
+#[case::emoji("📝笔记.md", "📚文档.md", "# Notes")]
 #[allow(clippy::unwrap_used)]
-fn test_rename_chinese_filename() {
+fn test_rename_unicode_filename(
+    #[case] old_name: &str,
+    #[case] new_name: &str,
+    #[case] content: &str,
+) {
     let temp_dir = TempDir::new().unwrap();
-    let source = temp_dir.path().join("旧名称.md");
-    write_file(&source, "# 中文文档");
+    let source = temp_dir.path().join(old_name);
+    write_file(&source, content);
 
-    let result = rename(&source, "新名称.md", temp_dir.path(), false);
+    let result = rename(&source, new_name, temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(!source.exists());
-    assert!(temp_dir.path().join("新名称.md").exists());
+    assert!(temp_dir.path().join(new_name).exists());
 }
 
 /// Test renaming ASCII file to Unicode filename.
