@@ -2458,7 +2458,10 @@ fn test_mv_directory_updates_image_references() {
 
     // Verify the image was moved
     let new_image_path = new_docs_dir.join("image.png");
-    assert!(new_image_path.exists(), "Image should be moved to new location");
+    assert!(
+        new_image_path.exists(),
+        "Image should be moved to new location"
+    );
     assert!(!image_file.exists(), "Old image should not exist");
 
     // Verify the reference was updated
@@ -2585,7 +2588,10 @@ fn test_mv_directory_dry_run_with_images() {
 
     // Verify nothing changed
     assert!(docs_dir.exists(), "Original directory should still exist");
-    assert!(!new_docs_dir.exists(), "New directory should not be created");
+    assert!(
+        !new_docs_dir.exists(),
+        "New directory should not be created"
+    );
     let index_content = fs::read_to_string(&index_file).unwrap();
     assert_eq!(
         index_content, original_content,
