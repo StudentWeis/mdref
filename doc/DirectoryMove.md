@@ -177,13 +177,39 @@ project/
 
 ## 八、边界条件
 
-当前实现还会额外处理这些情况：
+当前实现已经处理的情况：
 
 - 如果目标路径已经存在，则直接报错
 - 如果目标目录是源目录自身或其子目录，则直接拒绝执行
 - 如果开启 `dry-run`，只输出计划中的移动和改写，不真正修改文件
+- 外部 URL（`https://`、`mailto:` 等）不会被改写
+- 纯锚点链接（`#section`）不会被改写
+- 带锚点的文件链接（`file.md#section`）会正确保留锚点部分
+- 断链（指向不存在文件的链接）会被跳过，不会导致报错
+- URL 编码的路径（如 `%20` 表示空格）能正确解析
+- Link Reference Definition 语法（`[label]: url`）能正确识别和改写
 
-## 九、总结
+## 九、已知限制与待改进
+
+### 高优先级
+
+- **跨文件系统目录移动会失败**：`mv_directory` 使用 `fs::rename`，在 Unix 上如果源和目标不在同一个文件系统（mount point），`rename` 会返回 `EXDEV` 错误。当前没有 fallback 到递归 copy + delete 的逻辑。单文件移动使用 `fs::copy` 不受此影响。
+- **`remove_file` 失败后不回滚**：`mv_regular_file` 中，`fs::remove_file` 在 copy + apply_replacements 都成功之后执行。如果这一步失败（如权限问题），源文件和目标文件会同时存在，且引用已经指向了新位置，但不会触发回滚。
+- **Windows 换行符会被静默修改**：`apply_replacements` 中 `lines()` 会去掉 `\r`，最终 `join("\n")` 会把所有 `\r\n` 统一成 `\n`，改变文件的换行风格。
+
+### 中优先级
+
+- **目录内互引会产生冗余替换**：`plan_directory_replacements` 中，目录内部文件互相引用时，即使移动后相对路径不变，仍然会生成 replacement 并触发文件改写。可以在生成 replacement 前检查 `old_pattern == new_pattern`，相同则跳过。
+- **符号链接可能导致路径不匹配**：实现大量使用 `canonicalize()`，这会解析符号链接。如果源目录或目标路径中包含 symlink，canonicalize 后的路径可能和用户预期不一致，导致路径映射表中的 key 匹配不上。
+
+### 低优先级
+
+- **目录回滚的降级方案**：`mv_directory` 回滚时先把目录 rename 回去再恢复文件内容。如果 rename 回滚本身失败，后续的 `fs::write` 也会全部失败。可以考虑在 rename 回滚失败时，尝试用新路径写回 snapshot 内容作为降级方案。
+- **`fs::create_dir_all` 创建的中间目录不会被清理**：如果创建了目标路径的中间目录后 rename 失败，这些空目录不会被回滚清理。
+- **`url_decode_link` 对多字节 UTF-8 percent-encoding 处理不完整**：当前逐字节解码 `%XX` 并 `as char`，对于多字节 UTF-8 字符（如 `%E4%B8%AD` 表示"中"）会产生错误结果。实际影响有限，因为中文文件名通常直接使用 Unicode 而非 percent-encoding。
+- **`snapshot_file` 使用 `read_to_string`**：对于二进制文件会失败。虽然当前只对 md 文件做 snapshot，但接口本身没有限制，未来扩展时可能踩坑。
+
+## 十、总结
 
 目录移动的本质不是“批量搬文件”，而是“批量重建路径关系”。
 

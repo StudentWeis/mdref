@@ -2426,3 +2426,169 @@ fn test_mv_file_unicode_dry_run() {
         "Dry-run should not modify reference file"
     );
 }
+
+// ============= Non-Markdown resource file tests =============
+
+/// Moving a directory containing image files should update references to those images.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_directory_updates_image_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create a docs directory with an image
+    let docs_dir = temp_dir.path().join("docs");
+    let image_file = docs_dir.join("image.png");
+    fs::create_dir_all(&docs_dir).unwrap();
+    write_file(&image_file, "fake image content");
+
+    // Create a markdown file that references the image
+    let index_file = temp_dir.path().join("index.md");
+    write_file(&index_file, "![Docs Image](docs/image.png)");
+
+    // Move the docs directory to a new location
+    let new_docs_dir = temp_dir.path().join("documentation");
+    let result = mv_file(
+        docs_dir.to_str().unwrap(),
+        new_docs_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    // Verify the image was moved
+    let new_image_path = new_docs_dir.join("image.png");
+    assert!(new_image_path.exists(), "Image should be moved to new location");
+    assert!(!image_file.exists(), "Old image should not exist");
+
+    // Verify the reference was updated
+    let index_content = fs::read_to_string(&index_file).unwrap();
+    assert!(
+        index_content.contains("documentation/image.png"),
+        "Image reference should be updated to documentation/image.png. Got: {}",
+        index_content
+    );
+}
+
+/// Moving a directory with multiple non-md files (images, PDFs) should update all references.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_directory_updates_multiple_resource_types() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create assets directory with multiple resource files
+    let assets_dir = temp_dir.path().join("assets");
+    fs::create_dir_all(&assets_dir).unwrap();
+    write_file(assets_dir.join("logo.png"), "png content");
+    write_file(assets_dir.join("diagram.svg"), "svg content");
+    write_file(assets_dir.join("document.pdf"), "pdf content");
+
+    // Create markdown file referencing all resources
+    let readme_file = temp_dir.path().join("README.md");
+    write_file(
+        &readme_file,
+        "![Logo](assets/logo.png)\n\n![Diagram](assets/diagram.svg)\n\n[PDF](assets/document.pdf)",
+    );
+
+    // Move assets to static directory
+    let static_dir = temp_dir.path().join("static");
+    let result = mv_file(
+        assets_dir.to_str().unwrap(),
+        static_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    // Verify all references updated
+    let readme_content = fs::read_to_string(&readme_file).unwrap();
+    assert!(
+        readme_content.contains("static/logo.png"),
+        "Logo reference should be updated. Got: {}",
+        readme_content
+    );
+    assert!(
+        readme_content.contains("static/diagram.svg"),
+        "SVG reference should be updated. Got: {}",
+        readme_content
+    );
+    assert!(
+        readme_content.contains("static/document.pdf"),
+        "PDF reference should be updated. Got: {}",
+        readme_content
+    );
+}
+
+/// Moving a directory should update image references from nested markdown files.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_directory_updates_nested_image_references() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create nested structure: docs/guide with an image
+    let guide_dir = temp_dir.path().join("docs").join("guide");
+    let images_dir = guide_dir.join("images");
+    fs::create_dir_all(&images_dir).unwrap();
+    write_file(images_dir.join("screenshot.png"), "screenshot");
+
+    // Create markdown file in docs root referencing the nested image
+    let docs_index = temp_dir.path().join("docs").join("index.md");
+    write_file(&docs_index, "![Screenshot](guide/images/screenshot.png)");
+
+    // Move the docs directory
+    let new_docs_dir = temp_dir.path().join("documentation");
+    let result = mv_file(
+        temp_dir.path().join("docs").to_str().unwrap(),
+        new_docs_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    );
+
+    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+
+    // Verify reference was updated
+    let index_content = fs::read_to_string(new_docs_dir.join("index.md")).unwrap();
+    assert!(
+        index_content.contains("guide/images/screenshot.png"),
+        "Nested image reference should remain valid. Got: {}",
+        index_content
+    );
+}
+
+/// Dry-run moving a directory with image files should not modify references.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_directory_dry_run_with_images() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create docs with image
+    let docs_dir = temp_dir.path().join("docs");
+    fs::create_dir_all(&docs_dir).unwrap();
+    write_file(docs_dir.join("image.png"), "image content");
+
+    // Create reference
+    let index_file = temp_dir.path().join("index.md");
+    let original_content = "![Image](docs/image.png)";
+    write_file(&index_file, original_content);
+
+    // Dry-run move
+    let new_docs_dir = temp_dir.path().join("new-docs");
+    let result = mv_file(
+        docs_dir.to_str().unwrap(),
+        new_docs_dir.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        true,
+    );
+
+    assert!(result.is_ok());
+
+    // Verify nothing changed
+    assert!(docs_dir.exists(), "Original directory should still exist");
+    assert!(!new_docs_dir.exists(), "New directory should not be created");
+    let index_content = fs::read_to_string(&index_file).unwrap();
+    assert_eq!(
+        index_content, original_content,
+        "Dry-run should not modify references"
+    );
+}
