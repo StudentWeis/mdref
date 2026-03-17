@@ -1,4 +1,4 @@
-use mdref::{MdrefError, find_links, find_references, mv_file};
+use mdref::{MdrefError, find_links, find_references, mv};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -36,25 +36,25 @@ fn test_find_references_io_error_nonexistent_file() {
 }
 
 #[test]
-fn test_mv_file_io_error_nonexistent_source() {
+fn test_mv_io_error_nonexistent_source() {
     let temp_dir = TempDir::new().unwrap();
-    let result = mv_file(
+    let result = mv(
         temp_dir.path().join("ghost.md").to_str().unwrap(),
         temp_dir.path().join("target.md").to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
     assert!(result.is_err());
-    // mv_file now explicitly checks for source existence and returns Path error
+    // mv now explicitly checks for source existence and returns Path error
     // with a descriptive message before attempting any IO operations.
     assert!(matches!(result.unwrap_err(), MdrefError::Path(_)));
 }
 
-// ============= mv_file rejects existing target =============
+// ============= mv rejects existing target =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_target_already_exists() {
+fn test_mv_target_already_exists() {
     let temp_dir = TempDir::new().unwrap();
 
     let source = temp_dir.path().join("source.md");
@@ -63,8 +63,8 @@ fn test_mv_file_target_already_exists() {
     let target = temp_dir.path().join("target.md");
     write_file(target.clone(), "# Old target content");
 
-    // mv_file should return an error when target already exists
-    let result = mv_file(
+    // mv should return an error when target already exists
+    let result = mv(
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -134,17 +134,17 @@ fn test_find_links_non_markdown_returns_empty() {
     assert!(result.is_empty());
 }
 
-// ============= Edge case: mv_file with no references =============
+// ============= Edge case: mv with no references =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_no_references_still_moves() {
+fn test_mv_no_references_still_moves() {
     let temp_dir = TempDir::new().unwrap();
     let source = temp_dir.path().join("lonely.md");
     write_file(source.clone(), "# No one references me");
 
     let target = temp_dir.path().join("moved.md");
-    let result = mv_file(
+    let result = mv(
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -159,11 +159,11 @@ fn test_mv_file_no_references_still_moves() {
     assert!(content.contains("No one references me"));
 }
 
-// ============= Edge case: mv_file with no internal links =============
+// ============= Edge case: mv with no internal links =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_no_internal_links() {
+fn test_mv_no_internal_links() {
     let temp_dir = TempDir::new().unwrap();
     let source = temp_dir.path().join("plain.md");
     write_file(source.clone(), "# Plain\n\nJust text, no links.");
@@ -172,7 +172,7 @@ fn test_mv_file_no_internal_links() {
     write_file(ref_file.clone(), "[Plain](plain.md)");
 
     let target = temp_dir.path().join("sub").join("plain.md");
-    mv_file(
+    mv(
         source.to_str().unwrap(),
         target.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),

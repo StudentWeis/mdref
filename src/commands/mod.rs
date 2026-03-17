@@ -9,8 +9,8 @@ mod rename;
 pub enum Commands {
     /// Find references to a file
     Find {
-        /// The file path to find references for
-        filepath: String,
+        /// The path to find references
+        path: String,
         /// Root directory to search in (default: current directory)
         #[arg(short, long)]
         root: Option<String>,
@@ -45,7 +45,10 @@ pub enum Commands {
 
 pub fn handle_command(command: Commands) -> Result<()> {
     match command {
-        Commands::Find { filepath, root } => find::run(filepath, root),
+        Commands::Find {
+            path: filepath,
+            root,
+        } => find::run(filepath, root),
         Commands::Rename {
             old,
             new,

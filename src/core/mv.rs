@@ -190,14 +190,14 @@ fn build_replacement_patterns(
 /// Collect all link replacements needed for internal links within the moved file itself.
 fn plan_internal_replacements(
     scan_path: &Path,
-    raw_file_path: &Path,
+    source: &Path,
     resolved_dest: &Path,
 ) -> Result<Vec<LinkReplacement>> {
     let links = find_links(scan_path)?;
     let mut replacements = Vec::new();
 
     for link in &links {
-        if let Some(replacement) = build_link_replacement(link, raw_file_path, resolved_dest)? {
+        if let Some(replacement) = build_link_replacement(link, source, resolved_dest)? {
             replacements.push(replacement);
         }
     }
@@ -323,14 +323,14 @@ fn plan_directory_replacements(
     source_dir: &Path,
     source_canonical: &Path,
     dest_canonical: &Path,
-    root_dir: &Path,
+    root: &Path,
 ) -> Result<(ReplacementPlan, SnapshotPaths)> {
     let path_mappings =
         build_directory_path_mappings(source_dir, source_canonical, dest_canonical)?;
     let mut replacements_by_file: ReplacementPlan = HashMap::new();
     let mut snapshot_paths: HashSet<PathBuf> = HashSet::new();
 
-    for reference in find_references(source_dir, root_dir)? {
+    for reference in find_references(source_dir, root)? {
         let (link_path_only, _) = split_link_and_anchor(&reference.link_text);
         let Some(old_target) = resolve_reference_target(&reference.path, link_path_only) else {
             continue;
@@ -393,36 +393,26 @@ fn plan_directory_replacements(
 ///
 /// If the destination path is an existing directory, the source file will be moved into that
 /// directory with its original filename preserved.
-pub fn mv_file<P, B, D>(
-    raw_file_path: P,
-    new_file_path: B,
-    root_dir: D,
-    dry_run: bool,
-) -> Result<()>
+pub fn mv<P, B, D>(source: P, dest: B, root: D, dry_run: bool) -> Result<()>
 where
     P: AsRef<Path>,
     B: AsRef<Path>,
     D: AsRef<Path>,
 {
-    let raw_file_path = raw_file_path.as_ref();
-    let new_file_path = new_file_path.as_ref();
-    let root_dir = root_dir.as_ref();
+    let source = source.as_ref();
+    let dest = dest.as_ref();
+    let root = root.as_ref();
 
-    if raw_file_path.is_dir() {
-        return mv_directory(raw_file_path, new_file_path, root_dir, dry_run);
+    if source.is_dir() {
+        return mv_directory(source, dest, root, dry_run);
     }
 
-    mv_regular_file(raw_file_path, new_file_path, root_dir, dry_run)
+    mv_regular_file(source, dest, root, dry_run)
 }
 
-fn mv_regular_file(
-    raw_file_path: &Path,
-    new_file_path: &Path,
-    root_dir: &Path,
-    dry_run: bool,
-) -> Result<()> {
+fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Result<()> {
     let (resolved_dest, _source_canonical, _dest_canonical) =
-        match validate_move_paths(raw_file_path, new_file_path) {
+        match validate_move_paths(source, dest) {
             Ok(paths) => paths,
             Err(e) => {
                 // Special case: source == destination is a no-op, not an error.
@@ -434,24 +424,23 @@ fn mv_regular_file(
         };
 
     // Phase 1: Plan — pure computation, no side effects.
-    let references = find_references(raw_file_path, root_dir)?;
+    let references = find_references(source, root)?;
     let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
 
     if dry_run {
-        let internal_replacements =
-            plan_internal_replacements(raw_file_path, raw_file_path, &resolved_dest)?;
+        let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
         if !internal_replacements.is_empty() {
             replacements_by_file
                 .entry(resolved_dest.clone())
                 .or_default()
                 .extend(internal_replacements);
         }
-        print_dry_run_report(raw_file_path, &resolved_dest, &replacements_by_file);
+        print_dry_run_report(source, &resolved_dest, &replacements_by_file);
         return Ok(());
     }
 
     // Phase 2: Execute — all mutations are tracked for rollback.
-    let mut transaction = MoveTransaction::new(raw_file_path.to_path_buf(), resolved_dest.clone());
+    let mut transaction = MoveTransaction::new(source.to_path_buf(), resolved_dest.clone());
 
     // Snapshot all files that will be modified before touching anything.
     for file_path in replacements_by_file.keys() {
@@ -464,12 +453,11 @@ fn mv_regular_file(
     }
 
     // Copy source to destination.
-    fs::copy(raw_file_path, &resolved_dest)?;
+    fs::copy(source, &resolved_dest)?;
     transaction.mark_copied();
 
     // Compute internal link replacements from the newly copied file.
-    let internal_replacements =
-        plan_internal_replacements(&resolved_dest, raw_file_path, &resolved_dest)?;
+    let internal_replacements = plan_internal_replacements(&resolved_dest, source, &resolved_dest)?;
     if !internal_replacements.is_empty() {
         // Snapshot the destination file (the copy) before modifying it.
         transaction.snapshot_file(&resolved_dest)?;
@@ -488,13 +476,13 @@ fn mv_regular_file(
     })?;
 
     // Remove the original file.
-    fs::remove_file(raw_file_path)?;
+    fs::remove_file(source)?;
     transaction.mark_source_removed();
 
     Ok(())
 }
 
-fn mv_directory(source_dir: &Path, new_path: &Path, root_dir: &Path, dry_run: bool) -> Result<()> {
+fn mv_directory(source_dir: &Path, new_path: &Path, root: &Path, dry_run: bool) -> Result<()> {
     let (resolved_dest, source_canonical, dest_canonical) =
         match validate_move_paths(source_dir, new_path) {
             Ok(paths) => paths,
@@ -507,7 +495,7 @@ fn mv_directory(source_dir: &Path, new_path: &Path, root_dir: &Path, dry_run: bo
         };
 
     let (replacements_by_file, snapshot_paths) =
-        plan_directory_replacements(source_dir, &source_canonical, &dest_canonical, root_dir)?;
+        plan_directory_replacements(source_dir, &source_canonical, &dest_canonical, root)?;
 
     if dry_run {
         print_dry_run_report(source_dir, &resolved_dest, &replacements_by_file);

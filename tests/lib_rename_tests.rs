@@ -1,4 +1,4 @@
-use mdref::rename_file;
+use mdref::rename;
 use std::fs;
 use std::io::Write;
 use std::path::Path;
@@ -24,7 +24,7 @@ fn test_rename_basic() {
     let source = temp_dir.path().join("source.md");
     write_file(&source, "# Source File\n\nSome content.");
 
-    let result = rename_file(&source, "renamed.md", temp_dir.path(), false);
+    let result = rename(&source, "renamed.md", temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(!source.exists());
@@ -39,7 +39,7 @@ fn test_rename_preserves_content() {
     let source = temp_dir.path().join("doc.md");
     write_file(&source, content);
 
-    rename_file(&source, "doc_renamed.md", temp_dir.path(), false).unwrap();
+    rename(&source, "doc_renamed.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("doc_renamed.md");
     let result_content = fs::read_to_string(&renamed_path).unwrap();
@@ -61,7 +61,7 @@ fn test_rename_updates_external_references() {
     let ref_file = temp_dir.path().join("index.md");
     write_file(&ref_file, "See [original doc](original.md) for details.");
 
-    rename_file(&source, "updated.md", temp_dir.path(), false).unwrap();
+    rename(&source, "updated.md", temp_dir.path(), false).unwrap();
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     assert!(ref_content.contains("updated.md"));
@@ -83,7 +83,7 @@ fn test_rename_updates_multiple_external_references() {
     write_file(&ref2, "[Another](target.md)");
     write_file(&ref3, "[Deep](../target.md)");
 
-    rename_file(&source, "new_target.md", temp_dir.path(), false).unwrap();
+    rename(&source, "new_target.md", temp_dir.path(), false).unwrap();
 
     let ref1_content = fs::read_to_string(&ref1).unwrap();
     let ref2_content = fs::read_to_string(&ref2).unwrap();
@@ -104,7 +104,7 @@ fn test_rename_updates_self_reference() {
     let source = temp_dir.path().join("page.md");
     write_file(&source, "[Self link](page.md)");
 
-    rename_file(&source, "page_v2.md", temp_dir.path(), false).unwrap();
+    rename(&source, "page_v2.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("page_v2.md");
     let content = fs::read_to_string(&renamed_path).unwrap();
@@ -123,7 +123,7 @@ fn test_rename_preserves_internal_links_to_other_files() {
     let source = temp_dir.path().join("source.md");
     write_file(&source, "[Other file](other.md)");
 
-    rename_file(&source, "source_v2.md", temp_dir.path(), false).unwrap();
+    rename(&source, "source_v2.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("source_v2.md");
     let content = fs::read_to_string(&renamed_path).unwrap();
@@ -144,7 +144,7 @@ fn test_rename_in_subdirectory() {
     let ref_file = temp_dir.path().join("root.md");
     write_file(&ref_file, "[Deep](sub/deep.md)");
 
-    rename_file(&source, "shallow.md", temp_dir.path(), false).unwrap();
+    rename(&source, "shallow.md", temp_dir.path(), false).unwrap();
 
     assert!(temp_dir.path().join("sub").join("shallow.md").exists());
 
@@ -159,7 +159,7 @@ fn test_rename_in_subdirectory() {
 fn test_rename_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
 
-    let result = rename_file(
+    let result = rename(
         temp_dir.path().join("ghost.md"),
         "new.md",
         temp_dir.path(),
@@ -178,7 +178,7 @@ fn test_rename_chinese_filename() {
     let source = temp_dir.path().join("旧名称.md");
     write_file(&source, "# 中文文档");
 
-    let result = rename_file(&source, "新名称.md", temp_dir.path(), false);
+    let result = rename(&source, "新名称.md", temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(!source.exists());
@@ -193,7 +193,7 @@ fn test_rename_ascii_to_unicode() {
     let source = temp_dir.path().join("document.md");
     write_file(&source, "# Document");
 
-    let result = rename_file(&source, "文档.md", temp_dir.path(), false);
+    let result = rename(&source, "文档.md", temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(temp_dir.path().join("文档.md").exists());
@@ -211,7 +211,7 @@ fn test_rename_unicode_updates_references() {
     let ref_file = temp_dir.path().join("索引.md");
     write_file(&ref_file, "参考 [原始文档](原始文档.md) 获取更多信息。");
 
-    rename_file(&source, "更新文档.md", temp_dir.path(), false).unwrap();
+    rename(&source, "更新文档.md", temp_dir.path(), false).unwrap();
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     assert!(ref_content.contains("更新文档.md"));
@@ -226,7 +226,7 @@ fn test_rename_japanese_filename() {
     let source = temp_dir.path().join("旧文件.md");
     write_file(&source, "# ドキュメント");
 
-    let result = rename_file(&source, "新文件.md", temp_dir.path(), false);
+    let result = rename(&source, "新文件.md", temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(temp_dir.path().join("新文件.md").exists());
@@ -240,7 +240,7 @@ fn test_rename_emoji_filename() {
     let source = temp_dir.path().join("📝笔记.md");
     write_file(&source, "# Notes");
 
-    let result = rename_file(&source, "📚文档.md", temp_dir.path(), false);
+    let result = rename(&source, "📚文档.md", temp_dir.path(), false);
 
     assert!(result.is_ok());
     assert!(temp_dir.path().join("📚文档.md").exists());

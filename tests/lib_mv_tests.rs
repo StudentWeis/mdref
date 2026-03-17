@@ -1,4 +1,4 @@
-use mdref::{find_links, find_references, mv_file};
+use mdref::{find_links, find_references, mv};
 use std::fs;
 use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
@@ -16,10 +16,10 @@ fn write_file<P: AsRef<Path>>(path: P, content: &str) {
     file.write_all(content.as_bytes()).unwrap();
 }
 
-// ============= mv_file basic tests =============
+// ============= mv basic tests =============
 
 #[test]
-fn test_mv_file_basic() {
+fn test_mv_basic() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create test file
@@ -28,7 +28,7 @@ fn test_mv_file_basic() {
     write_file(&source_file, "# Source File\n\nSome content.");
 
     // Perform move
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -42,7 +42,7 @@ fn test_mv_file_basic() {
 }
 
 #[test]
-fn test_mv_file_with_references() {
+fn test_mv_with_references() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -55,7 +55,7 @@ fn test_mv_file_with_references() {
 
     // Move file
     let target_file = temp_dir.path().join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -72,7 +72,7 @@ fn test_mv_file_with_references() {
 }
 
 #[test]
-fn test_mv_file_to_subdirectory() {
+fn test_mv_to_subdirectory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -85,7 +85,7 @@ fn test_mv_file_to_subdirectory() {
 
     // Move to subdirectory
     let target_file = temp_dir.path().join("subdir").join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -102,7 +102,7 @@ fn test_mv_file_to_subdirectory() {
 }
 
 #[test]
-fn test_mv_file_with_internal_links() {
+fn test_mv_with_internal_links() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file containing links
@@ -113,7 +113,7 @@ fn test_mv_file_with_internal_links() {
 
     // Move file to subdirectory
     let target_file = temp_dir.path().join("subdir").join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -130,13 +130,13 @@ fn test_mv_file_with_internal_links() {
 }
 
 #[test]
-fn test_mv_file_nonexistent_source() {
+fn test_mv_nonexistent_source() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("nonexistent.md");
     let target_file = temp_dir.path().join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -148,7 +148,7 @@ fn test_mv_file_nonexistent_source() {
 }
 
 #[test]
-fn test_mv_file_creates_parent_directory() {
+fn test_mv_creates_parent_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -162,7 +162,7 @@ fn test_mv_file_creates_parent_directory() {
         .join("nested")
         .join("dir")
         .join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -177,7 +177,7 @@ fn test_mv_file_creates_parent_directory() {
 // ============= Edge case tests =============
 
 #[test]
-fn test_mv_file_preserves_content() {
+fn test_mv_preserves_content() {
     let temp_dir = TempDir::new().unwrap();
 
     let content = "# Title\n\nParagraph 1\n\n## Section\n\nMore content.";
@@ -185,7 +185,7 @@ fn test_mv_file_preserves_content() {
     write_file(&source_file, content);
 
     let target_file = temp_dir.path().join("target.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -201,7 +201,7 @@ fn test_mv_file_preserves_content() {
 }
 
 #[test]
-fn test_mv_file_multiple_references() {
+fn test_mv_multiple_references() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -218,7 +218,7 @@ fn test_mv_file_multiple_references() {
 
     // Move file
     let target_file = temp_dir.path().join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -238,7 +238,7 @@ fn test_mv_file_multiple_references() {
 }
 
 #[test]
-fn test_mv_file_same_name_different_directory() {
+fn test_mv_same_name_different_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -251,7 +251,7 @@ fn test_mv_file_same_name_different_directory() {
 
     // Move to subdirectory, keeping filename
     let target_file = temp_dir.path().join("subdir").join("file.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -265,7 +265,7 @@ fn test_mv_file_same_name_different_directory() {
 // ============= Integration tests =============
 
 #[test]
-fn test_mv_file_integration_with_find() {
+fn test_mv_integration_with_find() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create test file structure
@@ -283,7 +283,7 @@ fn test_mv_file_integration_with_find() {
 
     // Move file
     let target_file = temp_dir.path().join("target.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -299,7 +299,7 @@ fn test_mv_file_integration_with_find() {
 // ============= Deep nested move tests =============
 
 #[test]
-fn test_mv_file_deep_nested_move() {
+fn test_mv_deep_nested_move() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create deep source structure
@@ -324,7 +324,7 @@ fn test_mv_file_deep_nested_move() {
         .join("y")
         .join("z")
         .join("moved.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -346,7 +346,7 @@ fn test_mv_file_deep_nested_move() {
 // ============= Same file multiple references on different lines =============
 
 #[test]
-fn test_mv_file_same_file_multiple_lines_referencing() {
+fn test_mv_same_file_multiple_lines_referencing() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -360,7 +360,7 @@ fn test_mv_file_same_file_multiple_lines_referencing() {
     );
 
     let target_file = temp_dir.path().join("dest.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -377,14 +377,14 @@ fn test_mv_file_same_file_multiple_lines_referencing() {
 // ============= Move with self-reference =============
 
 #[test]
-fn test_mv_file_self_reference_update() {
+fn test_mv_self_reference_update() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("page.md");
     write_file(&source_file, "[Self](page.md)");
 
     let target_file = temp_dir.path().join("moved.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -400,7 +400,7 @@ fn test_mv_file_self_reference_update() {
 // ============= Move to same directory (equivalent to rename) =============
 
 #[test]
-fn test_mv_file_same_directory() {
+fn test_mv_same_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("old_name.md");
@@ -410,7 +410,7 @@ fn test_mv_file_same_directory() {
     write_file(&ref_file, "[Link](old_name.md)");
 
     let target_file = temp_dir.path().join("new_name.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -429,7 +429,7 @@ fn test_mv_file_same_directory() {
 // ============= Move file with image links =============
 
 #[test]
-fn test_mv_file_with_image_links() {
+fn test_mv_with_image_links() {
     let temp_dir = TempDir::new().unwrap();
 
     let image_file = temp_dir.path().join("assets").join("photo.png");
@@ -440,7 +440,7 @@ fn test_mv_file_with_image_links() {
 
     // Move doc.md into a subdirectory
     let target_file = temp_dir.path().join("sub").join("doc.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -454,7 +454,7 @@ fn test_mv_file_with_image_links() {
 }
 
 #[test]
-fn test_mv_file_preserves_external_urls() {
+fn test_mv_preserves_external_urls() {
     let temp_dir = TempDir::new().unwrap();
 
     let other_file = temp_dir.path().join("local.md");
@@ -462,14 +462,14 @@ fn test_mv_file_preserves_external_urls() {
 
     let source_file = temp_dir.path().join("mixed.md");
     // File contains both external URLs and local links.
-    // mv_file should skip external URLs and only update local links.
+    // mv should skip external URLs and only update local links.
     write_file(
         &source_file,
         "[Google](https://google.com)\n\n[Local](local.md)\n\n[GitHub](https://github.com)",
     );
 
     let target_file = temp_dir.path().join("sub").join("mixed.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -486,7 +486,7 @@ fn test_mv_file_preserves_external_urls() {
 }
 
 #[test]
-fn test_mv_file_from_subdir_to_root() {
+fn test_mv_from_subdir_to_root() {
     let temp_dir = TempDir::new().unwrap();
 
     let other_file = temp_dir.path().join("sub").join("sibling.md");
@@ -499,7 +499,7 @@ fn test_mv_file_from_subdir_to_root() {
     write_file(&ref_file, "[Nested](sub/nested.md)");
 
     let target_file = temp_dir.path().join("promoted.md");
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -533,7 +533,7 @@ fn test_mv_directory_updates_external_references() {
     );
 
     let target_dir = temp_dir.path().join("archive");
-    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
 
     assert!(target_dir.join("guide.md").exists());
     assert!(target_dir.join("nested").join("topic.md").exists());
@@ -557,7 +557,7 @@ fn test_mv_directory_updates_internal_links_to_outside_files() {
     write_file(&nested_file, "[FAQ](../shared/faq.md)");
 
     let target_dir = temp_dir.path().join("archive").join("docs");
-    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
 
     let moved_content = fs::read_to_string(target_dir.join("guide.md")).unwrap();
     assert!(moved_content.contains("../../shared/faq.md"));
@@ -574,7 +574,7 @@ fn test_mv_directory_preserves_internal_links_within_directory() {
     write_file(&topic_file, "[Guide](../guide.md)");
 
     let target_dir = temp_dir.path().join("archive").join("docs");
-    mv_file(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
+    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
 
     let moved_guide = fs::read_to_string(target_dir.join("guide.md")).unwrap();
     let moved_topic = fs::read_to_string(target_dir.join("nested").join("topic.md")).unwrap();
@@ -591,7 +591,7 @@ fn test_mv_directory_into_existing_directory_preserves_source_name() {
     let destination_parent = temp_dir.path().join("archive");
     fs::create_dir_all(&destination_parent).unwrap();
 
-    mv_file(&source_dir, &destination_parent, temp_dir.path(), false).unwrap();
+    mv(&source_dir, &destination_parent, temp_dir.path(), false).unwrap();
 
     assert!(destination_parent.join("docs").join("guide.md").exists());
     assert!(!source_dir.exists());
@@ -605,7 +605,7 @@ fn test_mv_directory_rejects_moving_into_own_subdirectory() {
     write_file(source_dir.join("guide.md"), "# Guide");
     let invalid_target = source_dir.join("nested").join("archive");
 
-    let result = mv_file(&source_dir, &invalid_target, temp_dir.path(), false);
+    let result = mv(&source_dir, &invalid_target, temp_dir.path(), false);
 
     assert!(result.is_err());
     assert!(source_dir.join("guide.md").exists());
@@ -613,7 +613,7 @@ fn test_mv_directory_rejects_moving_into_own_subdirectory() {
 
 /// Move file to a target path with non-existent intermediate directories.
 #[test]
-fn test_mv_file_with_nonexistent_intermediate_path() {
+fn test_mv_with_nonexistent_intermediate_path() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file in a subdirectory
@@ -633,7 +633,7 @@ fn test_mv_file_with_nonexistent_intermediate_path() {
         .join("target.md");
 
     // This should work even though the intermediate directories don't exist
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -657,7 +657,7 @@ fn test_mv_file_with_nonexistent_intermediate_path() {
 
 /// Move file with self-references to a different directory.
 #[test]
-fn test_mv_file_self_reference_cross_directory() {
+fn test_mv_self_reference_cross_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file with self-reference in a subdirectory
@@ -670,7 +670,7 @@ fn test_mv_file_self_reference_cross_directory() {
     // Move to a different directory with different name
     let target_file = temp_dir.path().join("moved").join("renamed.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -695,7 +695,7 @@ fn test_mv_file_self_reference_cross_directory() {
 
 /// Verify normal move operation succeeds for error type validation.
 #[test]
-fn test_mv_file_error_type_validation() {
+fn test_mv_error_type_validation() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create a source file
@@ -708,7 +708,7 @@ fn test_mv_file_error_type_validation() {
 
     // Move the file - this should succeed
     let target_file = temp_dir.path().join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -722,7 +722,7 @@ fn test_mv_file_error_type_validation() {
 
 /// Move file to a subdirectory and verify internal links are updated correctly.
 #[test]
-fn test_mv_file_with_relative_target_path() {
+fn test_mv_with_relative_target_path() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -744,7 +744,7 @@ fn test_mv_file_with_relative_target_path() {
     // Note: In practice, the command line might pass relative paths
     let target_file = temp_dir.path().join("subdir").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -773,7 +773,7 @@ fn test_mv_file_with_relative_target_path() {
 
 /// Move file to a deeply nested new directory with multiple references.
 #[test]
-fn test_mv_file_deep_new_directory_with_links() {
+fn test_mv_deep_new_directory_with_links() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create a file with internal links
@@ -798,7 +798,7 @@ fn test_mv_file_deep_new_directory_with_links() {
         .join("d")
         .join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -829,7 +829,7 @@ fn test_mv_file_deep_new_directory_with_links() {
 /// Bug: build_link_replacement does not strip anchors before canonicalize,
 /// causing IO error or anchor loss.
 #[test]
-fn test_mv_file_internal_link_with_anchor_preserved() {
+fn test_mv_internal_link_with_anchor_preserved() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create target of the link
@@ -842,7 +842,7 @@ fn test_mv_file_internal_link_with_anchor_preserved() {
 
     // Move source to a subdirectory
     let target_file = temp_dir.path().join("sub").join("moved.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -851,7 +851,7 @@ fn test_mv_file_internal_link_with_anchor_preserved() {
 
     assert!(
         result.is_ok(),
-        "mv_file should not fail when internal links have anchors: {:?}",
+        "mv should not fail when internal links have anchors: {:?}",
         result.err()
     );
 
@@ -866,7 +866,7 @@ fn test_mv_file_internal_link_with_anchor_preserved() {
 
 /// Move file with internal link that has anchor, staying in same directory.
 #[test]
-fn test_mv_file_internal_link_with_anchor_same_dir() {
+fn test_mv_internal_link_with_anchor_same_dir() {
     let temp_dir = TempDir::new().unwrap();
 
     let other_file = temp_dir.path().join("other.md");
@@ -876,7 +876,7 @@ fn test_mv_file_internal_link_with_anchor_same_dir() {
     write_file(&source_file, "[Section](other.md#section)");
 
     let target_file = temp_dir.path().join("renamed.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -885,7 +885,7 @@ fn test_mv_file_internal_link_with_anchor_same_dir() {
 
     assert!(
         result.is_ok(),
-        "mv_file should handle anchored internal links: {:?}",
+        "mv should handle anchored internal links: {:?}",
         result.err()
     );
 
@@ -899,9 +899,9 @@ fn test_mv_file_internal_link_with_anchor_same_dir() {
 
 /// Move file containing a broken (dangling) link should not fail.
 /// Bug: canonicalize() on non-existent link path returns IO error,
-/// causing the entire mv_file to fail.
+/// causing the entire mv to fail.
 #[test]
-fn test_mv_file_with_broken_internal_link() {
+fn test_mv_with_broken_internal_link() {
     let temp_dir = TempDir::new().unwrap();
 
     // Source file has a link to a non-existent file
@@ -909,7 +909,7 @@ fn test_mv_file_with_broken_internal_link() {
     write_file(&source_file, "[Broken](nonexistent.md)");
 
     let target_file = temp_dir.path().join("target.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -919,7 +919,7 @@ fn test_mv_file_with_broken_internal_link() {
     // Should succeed — broken links should be skipped, not cause failure
     assert!(
         result.is_ok(),
-        "mv_file should not fail due to broken internal links: {:?}",
+        "mv should not fail due to broken internal links: {:?}",
         result.err()
     );
     assert!(target_file.exists());
@@ -937,14 +937,14 @@ fn test_mv_file_with_broken_internal_link() {
 /// Moving a file to itself should not delete the file.
 /// Bug: fs::copy(src, src) is a no-op, then fs::remove_file(src) deletes the only copy.
 #[test]
-fn test_mv_file_source_equals_dest() {
+fn test_mv_source_equals_dest() {
     let temp_dir = TempDir::new().unwrap();
 
     let file = temp_dir.path().join("same.md");
     write_file(&file, "# Content");
 
     // Move file to itself
-    let result = mv_file(
+    let result = mv(
         file.to_str().unwrap(),
         file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -966,7 +966,7 @@ fn test_mv_file_source_equals_dest() {
 /// Moving a file to itself with relative path variants should be handled correctly.
 /// "file.md" and "./file.md" refer to the same file but string comparison fails.
 #[test]
-fn test_mv_file_same_file_different_path_formats() {
+fn test_mv_same_file_different_path_formats() {
     let temp_dir = TempDir::new().unwrap();
 
     let file = temp_dir.path().join("test.md");
@@ -986,7 +986,7 @@ fn test_mv_file_same_file_different_path_formats() {
     let original_dir = std::env::current_dir().unwrap();
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
-    let result = mv_file(rel_path, abs_path.to_str().unwrap(), ".", false);
+    let result = mv(rel_path, abs_path.to_str().unwrap(), ".", false);
 
     // Restore original directory
     std::env::set_current_dir(original_dir).unwrap();
@@ -1009,7 +1009,7 @@ fn test_mv_file_same_file_different_path_formats() {
 
 /// Moving a file to itself with "./" prefix on both paths.
 #[test]
-fn test_mv_file_dot_slash_paths() {
+fn test_mv_dot_slash_paths() {
     let temp_dir = TempDir::new().unwrap();
 
     let file = temp_dir.path().join("doc.md");
@@ -1019,7 +1019,7 @@ fn test_mv_file_dot_slash_paths() {
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     // Both paths use "./" prefix - they refer to the same file
-    let result = mv_file("./doc.md", "./doc.md", ".", false);
+    let result = mv("./doc.md", "./doc.md", ".", false);
 
     std::env::set_current_dir(original_dir).unwrap();
 
@@ -1032,7 +1032,7 @@ fn test_mv_file_dot_slash_paths() {
 /// Moving a file to itself should not modify references.
 /// If source == dest, all reference updates would be no-ops anyway.
 #[test]
-fn test_mv_file_same_path_preserves_references() {
+fn test_mv_same_path_preserves_references() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1045,7 +1045,7 @@ fn test_mv_file_same_path_preserves_references() {
     let original_source_content = fs::read_to_string(&source_file).unwrap();
 
     // Move to the same location
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         source_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1065,7 +1065,7 @@ fn test_mv_file_same_path_preserves_references() {
 /// Moving file to itself with trailing slash in directory path.
 /// This tests path normalization edge cases.
 #[test]
-fn test_mv_file_with_trailing_slash_in_directory() {
+fn test_mv_with_trailing_slash_in_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     let file = temp_dir.path().join("file.md");
@@ -1076,7 +1076,7 @@ fn test_mv_file_with_trailing_slash_in_directory() {
     let path_without_slash = file.to_str().unwrap().to_string();
 
     // These should be treated as the same file
-    let result = mv_file(
+    let result = mv(
         &path_with_slash,
         &path_without_slash,
         temp_dir.path(),
@@ -1091,7 +1091,7 @@ fn test_mv_file_with_trailing_slash_in_directory() {
 /// Moving file to itself with symlink (if supported by OS).
 /// Symlinks that resolve to the same file should be detected.
 #[test]
-fn test_mv_file_symlink_to_same_file() {
+fn test_mv_symlink_to_same_file() {
     let temp_dir = TempDir::new().unwrap();
 
     let real_file = temp_dir.path().join("real.md");
@@ -1105,7 +1105,7 @@ fn test_mv_file_symlink_to_same_file() {
         symlink(&real_file, &symlink_path).unwrap();
 
         // Move from symlink to real file - both resolve to same content
-        let result = mv_file(
+        let result = mv(
             symlink_path.to_str().unwrap(),
             real_file.to_str().unwrap(),
             temp_dir.path(),
@@ -1129,7 +1129,7 @@ fn test_mv_file_symlink_to_same_file() {
 /// Move file containing pure anchor links (#section) should preserve them unchanged.
 /// Pure anchor links are internal to the document and should not be rewritten.
 #[test]
-fn test_mv_file_preserves_pure_anchor_links() {
+fn test_mv_preserves_pure_anchor_links() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1139,7 +1139,7 @@ fn test_mv_file_preserves_pure_anchor_links() {
     );
 
     let target_file = temp_dir.path().join("sub").join("moved.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1148,7 +1148,7 @@ fn test_mv_file_preserves_pure_anchor_links() {
 
     assert!(
         result.is_ok(),
-        "mv_file should not fail on pure anchor links: {:?}",
+        "mv should not fail on pure anchor links: {:?}",
         result.err()
     );
 
@@ -1169,7 +1169,7 @@ fn test_mv_file_preserves_pure_anchor_links() {
 /// Move file with mixed pure anchor links and file links.
 /// Only file links should be updated; pure anchors should stay unchanged.
 #[test]
-fn test_mv_file_mixed_pure_anchor_and_file_links() {
+fn test_mv_mixed_pure_anchor_and_file_links() {
     let temp_dir = TempDir::new().unwrap();
 
     let other_file = temp_dir.path().join("other.md");
@@ -1182,14 +1182,14 @@ fn test_mv_file_mixed_pure_anchor_and_file_links() {
     );
 
     let target_file = temp_dir.path().join("sub").join("moved.md");
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     let content = fs::read_to_string(&target_file).unwrap();
     // Pure anchor link should be unchanged
@@ -1214,7 +1214,7 @@ fn test_mv_file_mixed_pure_anchor_and_file_links() {
 
 /// Move file with anchor links, preserving the anchor fragments.
 #[test]
-fn test_mv_file_preserves_anchor_links() {
+fn test_mv_preserves_anchor_links() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1225,7 +1225,7 @@ fn test_mv_file_preserves_anchor_links() {
 
     let target_file = temp_dir.path().join("target.md");
 
-    mv_file(
+    mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1247,7 +1247,7 @@ fn test_mv_file_preserves_anchor_links() {
 /// Dry-run should not move the source file.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_does_not_move() {
+fn test_mv_dry_run_does_not_move() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1255,7 +1255,7 @@ fn test_mv_file_dry_run_does_not_move() {
 
     let target_file = temp_dir.path().join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1276,7 +1276,7 @@ fn test_mv_file_dry_run_does_not_move() {
 /// Dry-run should not modify any reference files.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_does_not_update_references() {
+fn test_mv_dry_run_does_not_update_references() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1287,7 +1287,7 @@ fn test_mv_file_dry_run_does_not_update_references() {
 
     let target_file = temp_dir.path().join("sub").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1308,7 +1308,7 @@ fn test_mv_file_dry_run_does_not_update_references() {
 /// Dry-run should not create intermediate directories.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_does_not_create_directories() {
+fn test_mv_dry_run_does_not_create_directories() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1316,7 +1316,7 @@ fn test_mv_file_dry_run_does_not_create_directories() {
 
     let target_file = temp_dir.path().join("new").join("nested").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1332,10 +1332,10 @@ fn test_mv_file_dry_run_does_not_create_directories() {
 
 /// Dry-run should still validate that the source file exists.
 #[test]
-fn test_mv_file_dry_run_validates_source() {
+fn test_mv_dry_run_validates_source() {
     let temp_dir = TempDir::new().unwrap();
 
-    let result = mv_file(
+    let result = mv(
         temp_dir.path().join("ghost.md").to_str().unwrap(),
         temp_dir.path().join("target.md").to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1351,7 +1351,7 @@ fn test_mv_file_dry_run_validates_source() {
 /// Dry-run with rename (same directory, different name) should not modify anything.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_rename_scenario() {
+fn test_mv_dry_run_rename_scenario() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("old_name.md");
@@ -1362,7 +1362,7 @@ fn test_mv_file_dry_run_rename_scenario() {
 
     let target_file = temp_dir.path().join("new_name.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1383,7 +1383,7 @@ fn test_mv_file_dry_run_rename_scenario() {
 /// Dry-run with internal links should not modify the source file.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_with_internal_links() {
+fn test_mv_dry_run_with_internal_links() {
     let temp_dir = TempDir::new().unwrap();
 
     let other_file = temp_dir.path().join("other.md");
@@ -1395,7 +1395,7 @@ fn test_mv_file_dry_run_with_internal_links() {
 
     let target_file = temp_dir.path().join("sub").join("moved.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1418,7 +1418,7 @@ fn test_mv_file_dry_run_with_internal_links() {
 /// The existing file should NOT be overwritten.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_destination_already_exists() {
+fn test_mv_destination_already_exists() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1436,7 +1436,7 @@ fn test_mv_file_destination_already_exists() {
     let original_target_content = fs::read_to_string(&target_file).unwrap();
 
     // Attempt to move - should fail because target already exists
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1446,7 +1446,7 @@ fn test_mv_file_destination_already_exists() {
     // The operation should fail
     assert!(
         result.is_err(),
-        "mv_file should return an error when destination already exists"
+        "mv should return an error when destination already exists"
     );
 
     // Source file should still exist (not moved)
@@ -1465,7 +1465,7 @@ fn test_mv_file_destination_already_exists() {
 
 /// Moving a file to an existing destination should fail even in dry-run mode.
 #[test]
-fn test_mv_file_dry_run_destination_already_exists() {
+fn test_mv_dry_run_destination_already_exists() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1474,7 +1474,7 @@ fn test_mv_file_dry_run_destination_already_exists() {
     let target_file = temp_dir.path().join("target.md");
     write_file(&target_file, "# Existing Target");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1493,7 +1493,7 @@ fn test_mv_file_dry_run_destination_already_exists() {
 /// Moving a file to an existing directory should place the file inside that directory.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_existing_directory() {
+fn test_mv_to_existing_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1505,7 +1505,7 @@ fn test_mv_file_to_existing_directory() {
     fs::create_dir_all(&target_dir).unwrap();
 
     // Move source file to the directory (not a file path)
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1515,7 +1515,7 @@ fn test_mv_file_to_existing_directory() {
     // Operation should succeed
     assert!(
         result.is_ok(),
-        "mv_file should succeed when destination is an existing directory: {:?}",
+        "mv should succeed when destination is an existing directory: {:?}",
         result.err()
     );
 
@@ -1536,7 +1536,7 @@ fn test_mv_file_to_existing_directory() {
 /// Moving a file to an existing directory with references should update them correctly.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_directory_with_references() {
+fn test_mv_to_directory_with_references() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1552,7 +1552,7 @@ fn test_mv_file_to_directory_with_references() {
     fs::create_dir_all(&target_dir).unwrap();
 
     // Move source file to directory
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1573,7 +1573,7 @@ fn test_mv_file_to_directory_with_references() {
 /// Moving a file to an existing directory with internal links should update them correctly.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_directory_updates_internal_links() {
+fn test_mv_to_directory_updates_internal_links() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create a sibling file
@@ -1589,7 +1589,7 @@ fn test_mv_file_to_directory_updates_internal_links() {
     fs::create_dir_all(&target_dir).unwrap();
 
     // Move source file to directory
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1611,7 +1611,7 @@ fn test_mv_file_to_directory_updates_internal_links() {
 /// Moving a file to a nested existing directory should work correctly.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_nested_existing_directory() {
+fn test_mv_to_nested_existing_directory() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1623,7 +1623,7 @@ fn test_mv_file_to_nested_existing_directory() {
     fs::create_dir_all(&target_dir).unwrap();
 
     // Move source file to nested directory
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1640,7 +1640,7 @@ fn test_mv_file_to_nested_existing_directory() {
 /// Moving a file to an existing directory in dry-run mode should not move the file.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_directory_dry_run() {
+fn test_mv_to_directory_dry_run() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1652,7 +1652,7 @@ fn test_mv_file_to_directory_dry_run() {
     fs::create_dir_all(&target_dir).unwrap();
 
     // Dry-run move to directory
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1673,7 +1673,7 @@ fn test_mv_file_to_directory_dry_run() {
 /// Moving a file to an existing directory that already contains a file with same name should fail.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_directory_file_already_exists() {
+fn test_mv_to_directory_file_already_exists() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -1687,7 +1687,7 @@ fn test_mv_file_to_directory_file_already_exists() {
     write_file(&existing_file, "# Existing Content");
 
     // Move should fail because file already exists in target directory
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1696,7 +1696,7 @@ fn test_mv_file_to_directory_file_already_exists() {
 
     assert!(
         result.is_err(),
-        "mv_file should fail when destination file already exists in directory"
+        "mv should fail when destination file already exists in directory"
     );
 
     // Both files should remain unchanged
@@ -1710,7 +1710,7 @@ fn test_mv_file_to_directory_file_already_exists() {
 /// Moving a file with trailing slash to existing directory should work.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_directory_with_trailing_slash() {
+fn test_mv_to_directory_with_trailing_slash() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("doc.md");
@@ -1722,7 +1722,7 @@ fn test_mv_file_to_directory_with_trailing_slash() {
     // Path with trailing slash should still be recognized as directory
     let target_with_slash = format!("{}/", target_dir.to_str().unwrap());
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         &target_with_slash,
         temp_dir.path().to_str().unwrap(),
@@ -1742,7 +1742,7 @@ fn test_mv_file_to_directory_with_trailing_slash() {
 /// Moving a file to a non-existent path (not a directory) should work as before.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_to_nonexistent_path_still_works() {
+fn test_mv_to_nonexistent_path_still_works() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("old.md");
@@ -1751,7 +1751,7 @@ fn test_mv_file_to_nonexistent_path_still_works() {
     // Target is a file path that doesn't exist
     let target_file = temp_dir.path().join("new.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1770,7 +1770,7 @@ fn test_mv_file_to_nonexistent_path_still_works() {
 /// remain intact.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_rollback_on_write_failure() {
+fn test_mv_rollback_on_write_failure() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1787,7 +1787,7 @@ fn test_mv_file_rollback_on_write_failure() {
     permissions.set_mode(0o444);
     fs::set_permissions(&ref_file, permissions).unwrap();
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1802,7 +1802,7 @@ fn test_mv_file_rollback_on_write_failure() {
     // The operation should have failed.
     assert!(
         result.is_err(),
-        "mv_file should fail when a reference file is read-only"
+        "mv should fail when a reference file is read-only"
     );
 
     // Source file should still exist (not deleted).
@@ -1829,7 +1829,7 @@ fn test_mv_file_rollback_on_write_failure() {
 /// files should be restored to their original content.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_rollback_restores_already_modified_files() {
+fn test_mv_rollback_restores_already_modified_files() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1857,7 +1857,7 @@ fn test_mv_file_rollback_restores_already_modified_files() {
     perm_a.set_mode(0o444);
     fs::set_permissions(&ref_file_a, perm_a).unwrap();
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1873,7 +1873,7 @@ fn test_mv_file_rollback_restores_already_modified_files() {
     perm_b.set_mode(0o644);
     fs::set_permissions(&ref_file_b, perm_b).unwrap();
 
-    assert!(result.is_err(), "mv_file should fail");
+    assert!(result.is_err(), "mv should fail");
 
     // Source should still exist.
     assert!(source_file.exists(), "Source should survive rollback");
@@ -1901,7 +1901,7 @@ fn test_mv_file_rollback_restores_already_modified_files() {
 /// inconsistent state — verifying the happy path still works with the transaction wrapper.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_transaction_happy_path_multiple_refs() {
+fn test_mv_transaction_happy_path_multiple_refs() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("source.md");
@@ -1918,7 +1918,7 @@ fn test_mv_file_transaction_happy_path_multiple_refs() {
 
     let target_file = temp_dir.path().join("docs").join("moved.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -1962,7 +1962,7 @@ fn test_mv_file_transaction_happy_path_multiple_refs() {
 /// Verify that when a move fails, the source file content is fully preserved.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_rollback_preserves_source_content() {
+fn test_mv_rollback_preserves_source_content() {
     let temp_dir = TempDir::new().unwrap();
 
     let original_source_content = "# Important Document\n\nThis has [links](other.md) and **formatting**.\n\n## Section\n\nMore content here.";
@@ -1982,7 +1982,7 @@ fn test_mv_file_rollback_preserves_source_content() {
     permissions.set_mode(0o444);
     fs::set_permissions(&ref_file, permissions).unwrap();
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2009,7 +2009,7 @@ fn test_mv_file_rollback_preserves_source_content() {
 /// Moving a file that is referenced via a link reference definition should update the definition.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_updates_link_reference_definition_in_external_file() {
+fn test_mv_updates_link_reference_definition_in_external_file() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create source file
@@ -2025,14 +2025,14 @@ fn test_mv_file_updates_link_reference_definition_in_external_file() {
 
     let target_file = temp_dir.path().join("docs").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     // The link reference definition should be updated
     let ref_content = fs::read_to_string(&ref_file).unwrap();
@@ -2052,7 +2052,7 @@ fn test_mv_file_updates_link_reference_definition_in_external_file() {
 /// Moving a file that is referenced via a link reference definition with a title.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_updates_link_reference_definition_with_title() {
+fn test_mv_updates_link_reference_definition_with_title() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("target.md");
@@ -2063,14 +2063,14 @@ fn test_mv_file_updates_link_reference_definition_with_title() {
 
     let target_file = temp_dir.path().join("sub").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     assert!(
@@ -2088,7 +2088,7 @@ fn test_mv_file_updates_link_reference_definition_with_title() {
 /// Moving a file with both inline links and link reference definitions referencing it.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_mixed_inline_and_reference_definition() {
+fn test_mv_mixed_inline_and_reference_definition() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("target.md");
@@ -2103,14 +2103,14 @@ fn test_mv_file_mixed_inline_and_reference_definition() {
 
     let target_file = temp_dir.path().join("docs").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     // Inline link should NOT be updated (it was replaced by the reference definition)
@@ -2131,7 +2131,7 @@ fn test_mv_file_mixed_inline_and_reference_definition() {
 /// The moved file itself contains link reference definitions pointing to other files.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_updates_internal_link_reference_definitions() {
+fn test_mv_updates_internal_link_reference_definitions() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create a sibling file
@@ -2144,14 +2144,14 @@ fn test_mv_file_updates_internal_link_reference_definitions() {
 
     let target_file = temp_dir.path().join("sub").join("moved.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     // The moved file's internal link reference definition should be updated
     let moved_content = fs::read_to_string(&target_file).unwrap();
@@ -2165,7 +2165,7 @@ fn test_mv_file_updates_internal_link_reference_definitions() {
 /// Dry-run with link reference definitions should not modify any files.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_dry_run_with_link_reference_definitions() {
+fn test_mv_dry_run_with_link_reference_definitions() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("target.md");
@@ -2177,7 +2177,7 @@ fn test_mv_file_dry_run_with_link_reference_definitions() {
 
     let target_file = temp_dir.path().join("docs").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2199,7 +2199,7 @@ fn test_mv_file_dry_run_with_link_reference_definitions() {
 /// Multiple link reference definitions in the same file referencing the moved file.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_multiple_link_reference_definitions_same_file() {
+fn test_mv_multiple_link_reference_definitions_same_file() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("target.md");
@@ -2213,14 +2213,14 @@ fn test_mv_file_multiple_link_reference_definitions_same_file() {
 
     let target_file = temp_dir.path().join("docs").join("target.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     let ref_content = fs::read_to_string(&ref_file).unwrap();
     let definition_count = ref_content.matches("]: docs/target.md").count();
@@ -2236,7 +2236,7 @@ fn test_mv_file_multiple_link_reference_definitions_same_file() {
 /// Test moving file with Chinese filename.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_chinese_filename() {
+fn test_mv_chinese_filename() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("源文件.md");
@@ -2244,14 +2244,14 @@ fn test_mv_file_chinese_filename() {
 
     let target_file = temp_dir.path().join("目标文件.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
     assert!(target_file.exists());
     assert!(!source_file.exists());
 }
@@ -2259,7 +2259,7 @@ fn test_mv_file_chinese_filename() {
 /// Test moving file with Chinese filename to subdirectory.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_chinese_to_subdirectory() {
+fn test_mv_chinese_to_subdirectory() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("文档.md");
@@ -2267,7 +2267,7 @@ fn test_mv_file_chinese_to_subdirectory() {
 
     let target_file = temp_dir.path().join("子目录").join("归档文档.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2281,7 +2281,7 @@ fn test_mv_file_chinese_to_subdirectory() {
 /// Test moving file and updating references with Unicode paths.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_unicode_updates_references() {
+fn test_mv_unicode_updates_references() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("原始文档.md");
@@ -2292,7 +2292,7 @@ fn test_mv_file_unicode_updates_references() {
 
     let target_file = temp_dir.path().join("归档").join("更新文档.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2312,7 +2312,7 @@ fn test_mv_file_unicode_updates_references() {
 /// Test moving file with Japanese filename.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_japanese_filename() {
+fn test_mv_japanese_filename() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("元ファイル.md");
@@ -2320,7 +2320,7 @@ fn test_mv_file_japanese_filename() {
 
     let target_file = temp_dir.path().join("新ファイル.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2334,7 +2334,7 @@ fn test_mv_file_japanese_filename() {
 /// Test moving file with emoji in filename.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_emoji_filename() {
+fn test_mv_emoji_filename() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("📝笔记.md");
@@ -2343,7 +2343,7 @@ fn test_mv_file_emoji_filename() {
     let target_file = temp_dir.path().join("📚归档").join("📝笔记.md");
     fs::create_dir_all(target_file.parent().unwrap()).unwrap();
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2357,7 +2357,7 @@ fn test_mv_file_emoji_filename() {
 /// Test moving file updates internal Unicode links.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_updates_internal_unicode_links() {
+fn test_mv_updates_internal_unicode_links() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create sibling file
@@ -2371,7 +2371,7 @@ fn test_mv_file_updates_internal_unicode_links() {
     // Move to subdirectory
     let target_file = temp_dir.path().join("子目录").join("主页.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2391,7 +2391,7 @@ fn test_mv_file_updates_internal_unicode_links() {
 /// Test dry-run with Unicode filenames should not modify anything.
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_mv_file_unicode_dry_run() {
+fn test_mv_unicode_dry_run() {
     let temp_dir = TempDir::new().unwrap();
 
     let source_file = temp_dir.path().join("测试文件.md");
@@ -2403,7 +2403,7 @@ fn test_mv_file_unicode_dry_run() {
 
     let target_file = temp_dir.path().join("新位置").join("测试文件.md");
 
-    let result = mv_file(
+    let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
@@ -2447,14 +2447,14 @@ fn test_mv_directory_updates_image_references() {
 
     // Move the docs directory to a new location
     let new_docs_dir = temp_dir.path().join("documentation");
-    let result = mv_file(
+    let result = mv(
         docs_dir.to_str().unwrap(),
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     // Verify the image was moved
     let new_image_path = new_docs_dir.join("image.png");
@@ -2495,14 +2495,14 @@ fn test_mv_directory_updates_multiple_resource_types() {
 
     // Move assets to static directory
     let static_dir = temp_dir.path().join("static");
-    let result = mv_file(
+    let result = mv(
         assets_dir.to_str().unwrap(),
         static_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     // Verify all references updated
     let readme_content = fs::read_to_string(&readme_file).unwrap();
@@ -2541,14 +2541,14 @@ fn test_mv_directory_updates_nested_image_references() {
 
     // Move the docs directory
     let new_docs_dir = temp_dir.path().join("documentation");
-    let result = mv_file(
+    let result = mv(
         temp_dir.path().join("docs").to_str().unwrap(),
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
     );
 
-    assert!(result.is_ok(), "mv_file should succeed: {:?}", result.err());
+    assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     // Verify reference was updated
     let index_content = fs::read_to_string(new_docs_dir.join("index.md")).unwrap();
@@ -2577,7 +2577,7 @@ fn test_mv_directory_dry_run_with_images() {
 
     // Dry-run move
     let new_docs_dir = temp_dir.path().join("new-docs");
-    let result = mv_file(
+    let result = mv(
         docs_dir.to_str().unwrap(),
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
