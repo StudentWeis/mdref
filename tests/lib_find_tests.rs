@@ -1,4 +1,4 @@
-use mdref::{Reference, find_links, find_references};
+use mdref::{MdrefError, Reference, find_links, find_references};
 use rstest::rstest;
 use std::fs;
 use std::io::Write;
@@ -18,10 +18,12 @@ use common::write_file;
 #[test]
 fn test_find_links_returns_error_for_nonexistent_file() {
     let result = find_links(Path::new("nonexistent.md"));
-    assert!(
-        result.is_err(),
-        "find_links should return error for nonexistent file"
-    );
+    match result {
+        Err(MdrefError::Io(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("expected io error for nonexistent file, got {other:?}"),
+    }
 }
 
 /// find_links should return an empty Vec for non-markdown files.
@@ -270,10 +272,12 @@ fn test_find_references_returns_error_for_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
     let result = find_references(temp_dir.path().join("ghost.md"), temp_dir.path());
 
-    assert!(
-        result.is_err(),
-        "find_references should return error for nonexistent file"
-    );
+    match result {
+        Err(MdrefError::Io(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        }
+        other => panic!("expected io error for nonexistent file, got {other:?}"),
+    }
 }
 
 /// find_references should return empty Vec when no references exist.
@@ -465,39 +469,39 @@ fn test_find_links_handles_mixed_unicode_content() {
     assert!(link_texts.contains(&"한글.md"));
 }
 
-/// Test find_references with Unicode target filename.
-#[test]
+/// Test find_references with Unicode file and directory paths.
+#[rstest]
+#[case::unicode_file(
+    "目标文件.md",
+    "# 目标",
+    "引用者.md",
+    "请参考 [目标文件](目标文件.md)",
+    "目标文件.md"
+)]
+#[case::unicode_directory(
+    "文档库/参考资料.md",
+    "# 参考资料",
+    "索引.md",
+    "查看 [参考资料](文档库/参考资料.md)",
+    "文档库/参考资料.md"
+)]
 #[allow(clippy::unwrap_used)]
-fn test_find_references_handles_unicode_target() {
+fn test_find_references_handles_unicode_paths(
+    #[case] target_relative_path: &str,
+    #[case] target_content: &str,
+    #[case] reference_name: &str,
+    #[case] reference_content: &str,
+    #[case] expected_link_text: &str,
+) {
     let temp_dir = TempDir::new().unwrap();
 
-    let target = temp_dir.path().join("目标文件.md");
-    write_file(&target, "# 目标");
+    let target = temp_dir.path().join(target_relative_path);
+    write_file(&target, target_content);
 
-    let ref_file = temp_dir.path().join("引用者.md");
-    write_file(&ref_file, "请参考 [目标文件](目标文件.md)");
-
-    let result = find_references(&target, temp_dir.path()).unwrap();
-    assert_eq!(result.len(), 1, "Should find reference to Unicode file");
-    assert_eq!(result[0].link_text, "目标文件.md");
-}
-
-/// Test find_references with Unicode directory path.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_find_references_handles_unicode_directory_path() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let target = temp_dir.path().join("文档库").join("参考资料.md");
-    write_file(&target, "# 参考资料");
-
-    let ref_file = temp_dir.path().join("索引.md");
-    write_file(&ref_file, "查看 [参考资料](文档库/参考资料.md)");
+    let ref_file = temp_dir.path().join(reference_name);
+    write_file(&ref_file, reference_content);
 
     let result = find_references(&target, temp_dir.path()).unwrap();
-    assert_eq!(
-        result.len(),
-        1,
-        "Should find reference through Unicode path"
-    );
+    assert_eq!(result.len(), 1, "Should find one Unicode reference");
+    assert_eq!(result[0].link_text, expected_link_text);
 }

@@ -856,7 +856,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_apply_replacements_line_out_of_range() {
+    fn test_apply_replacements_line_out_of_range_returns_invalid_line_error() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("doc.md");
         write_file(file_path.to_str().unwrap(), "Single line");
@@ -869,7 +869,13 @@ mod tests {
         }];
 
         let result = apply_replacements(&file_path, &replacements);
-        assert!(result.is_err());
+        match result {
+            Err(MdrefError::InvalidLine(message)) => {
+                assert!(message.contains("999"));
+                assert!(message.contains("doc.md"));
+            }
+            other => panic!("expected invalid line error, got {other:?}"),
+        }
     }
 
     #[test]
@@ -1160,5 +1166,38 @@ mod tests {
         let span = find_reference_definition_url_span(line).unwrap();
 
         assert_eq!(&line[span.0..span.1], "target.md");
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_execute_with_rollback_returns_rollback_failed_when_snapshot_restore_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let snapshot_file = temp_dir.path().join("refs").join("index.md");
+        write_file(snapshot_file.to_str().unwrap(), "[Doc](source.md)");
+
+        let mut transaction = MoveTransaction::new(
+            temp_dir.path().join("source.md"),
+            temp_dir.path().join("moved").join("source.md"),
+        );
+        transaction.snapshot_file(&snapshot_file).unwrap();
+
+        fs::remove_dir_all(snapshot_file.parent().unwrap()).unwrap();
+
+        let result = execute_with_rollback(&transaction, || {
+            Err(MdrefError::Path("simulated move failure".to_string()))
+        });
+
+        match result {
+            Err(MdrefError::RollbackFailed {
+                original_error,
+                rollback_errors,
+            }) => {
+                assert_eq!(original_error, "Path error: simulated move failure");
+                assert_eq!(rollback_errors.len(), 1);
+                assert!(rollback_errors[0].contains("Failed to restore"));
+                assert!(rollback_errors[0].contains("index.md"));
+            }
+            other => panic!("expected rollback failed error, got {other:?}"),
+        }
     }
 }

@@ -168,6 +168,7 @@ fn test_rename_nonexistent_file() {
 #[case::chinese("旧名称.md", "新名称.md", "# 中文文档")]
 #[case::japanese("旧文件.md", "新文件.md", "# ドキュメント")]
 #[case::emoji("📝笔记.md", "📚文档.md", "# Notes")]
+#[case::ascii_to_unicode("document.md", "文档.md", "# Document")]
 #[allow(clippy::unwrap_used)]
 fn test_rename_unicode_filename(
     #[case] old_name: &str,
@@ -183,20 +184,6 @@ fn test_rename_unicode_filename(
     assert!(result.is_ok());
     assert!(!source.exists());
     assert!(temp_dir.path().join(new_name).exists());
-}
-
-/// Test renaming ASCII file to Unicode filename.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_rename_ascii_to_unicode() {
-    let temp_dir = temp_dir();
-    let source = temp_dir.path().join("document.md");
-    write_file(&source, "# Document");
-
-    let result = rename(&source, "文档.md", temp_dir.path(), false);
-
-    assert!(result.is_ok());
-    assert!(temp_dir.path().join("文档.md").exists());
 }
 
 /// Test renaming Unicode file updates external references correctly.
@@ -216,32 +203,4 @@ fn test_rename_unicode_updates_references() {
     let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("更新文档.md"));
     assert!(!ref_content.contains("原始文档.md"));
-}
-
-/// Test renaming file with Japanese name.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_rename_japanese_filename() {
-    let temp_dir = temp_dir();
-    let source = temp_dir.path().join("旧文件.md");
-    write_file(&source, "# ドキュメント");
-
-    let result = rename(&source, "新文件.md", temp_dir.path(), false);
-
-    assert!(result.is_ok());
-    assert!(temp_dir.path().join("新文件.md").exists());
-}
-
-/// Test renaming file with emoji in name.
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_rename_emoji_filename() {
-    let temp_dir = temp_dir();
-    let source = temp_dir.path().join("📝笔记.md");
-    write_file(&source, "# Notes");
-
-    let result = rename(&source, "📚文档.md", temp_dir.path(), false);
-
-    assert!(result.is_ok());
-    assert!(temp_dir.path().join("📚文档.md").exists());
 }

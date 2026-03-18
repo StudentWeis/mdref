@@ -1,12 +1,40 @@
-use mdref::{find_links, find_references, mv};
+use mdref::{MdrefError, find_links, find_references, mv};
 use rstest::rstest;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 use tempfile::TempDir;
 
 mod common;
 
 use common::write_file;
+
+static CURRENT_DIR_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+struct CurrentDirGuard {
+    original_dir: PathBuf,
+}
+
+impl CurrentDirGuard {
+    fn enter(path: &Path) -> Self {
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(path).unwrap();
+        Self { original_dir }
+    }
+}
+
+impl Drop for CurrentDirGuard {
+    fn drop(&mut self) {
+        std::env::set_current_dir(&self.original_dir).unwrap();
+    }
+}
+
+fn with_current_dir<T>(path: &Path, operation: impl FnOnce() -> T) -> T {
+    let _lock = CURRENT_DIR_LOCK.lock().unwrap();
+    let _guard = CurrentDirGuard::enter(path);
+    operation()
+}
 
 // Library tests for `mv` cover path rewriting and filesystem mutations.
 // CLI tests keep only representative command wiring and process-contract checks.
@@ -138,8 +166,12 @@ fn test_mv_nonexistent_source() {
         false,
     );
 
-    // Should return an error
-    assert!(result.is_err());
+    match result {
+        Err(MdrefError::Path(message)) => {
+            assert!(message.contains("Source path does not exist"));
+        }
+        other => panic!("expected path error for nonexistent source, got {other:?}"),
+    }
 }
 
 #[test]
@@ -823,20 +855,35 @@ fn test_mv_deep_new_directory_with_links() {
 /// Move file with internal links containing anchors should preserve the anchor.
 /// Bug: build_link_replacement does not strip anchors before canonicalize,
 /// causing IO error or anchor loss.
-#[test]
-fn test_mv_internal_link_with_anchor_preserved() {
+#[rstest]
+#[case::moved_to_subdirectory(
+    "# Other\n\n## Details",
+    "[Details](other.md#details)",
+    "sub/moved.md",
+    "../other.md#details"
+)]
+#[case::renamed_in_place(
+    "# Other\n\n## Section",
+    "[Section](other.md#section)",
+    "renamed.md",
+    "other.md#section"
+)]
+#[allow(clippy::unwrap_used)]
+fn test_mv_preserves_internal_anchor_links(
+    #[case] other_content: &str,
+    #[case] source_content: &str,
+    #[case] target_relative_path: &str,
+    #[case] expected_link: &str,
+) {
     let temp_dir = TempDir::new().unwrap();
 
-    // Create target of the link
     let other_file = temp_dir.path().join("other.md");
-    write_file(&other_file, "# Other\n\n## Details");
+    write_file(&other_file, other_content);
 
-    // Source file has a link with anchor fragment
     let source_file = temp_dir.path().join("source.md");
-    write_file(&source_file, "[Details](other.md#details)");
+    write_file(&source_file, source_content);
 
-    // Move source to a subdirectory
-    let target_file = temp_dir.path().join("sub").join("moved.md");
+    let target_file = temp_dir.path().join(target_relative_path);
     let result = mv(
         source_file.to_str().unwrap(),
         target_file.to_str().unwrap(),
@@ -851,43 +898,9 @@ fn test_mv_internal_link_with_anchor_preserved() {
     );
 
     let content = fs::read_to_string(&target_file).unwrap();
-    // The anchor should be preserved and path updated
     assert!(
-        content.contains("../other.md#details"),
+        content.contains(expected_link),
         "Internal link anchor should be preserved. Got: {}",
-        content
-    );
-}
-
-/// Move file with internal link that has anchor, staying in same directory.
-#[test]
-fn test_mv_internal_link_with_anchor_same_dir() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let other_file = temp_dir.path().join("other.md");
-    write_file(&other_file, "# Other\n\n## Section");
-
-    let source_file = temp_dir.path().join("source.md");
-    write_file(&source_file, "[Section](other.md#section)");
-
-    let target_file = temp_dir.path().join("renamed.md");
-    let result = mv(
-        source_file.to_str().unwrap(),
-        target_file.to_str().unwrap(),
-        temp_dir.path().to_str().unwrap(),
-        false,
-    );
-
-    assert!(
-        result.is_ok(),
-        "mv should handle anchored internal links: {:?}",
-        result.err()
-    );
-
-    let content = fs::read_to_string(&target_file).unwrap();
-    assert!(
-        content.contains("other.md#section"),
-        "Anchor should be preserved in same-dir move. Got: {}",
         content
     );
 }
@@ -960,68 +973,69 @@ fn test_mv_source_equals_dest() {
 
 /// Moving a file to itself with relative path variants should be handled correctly.
 /// "file.md" and "./file.md" refer to the same file but string comparison fails.
-#[test]
-fn test_mv_same_file_different_path_formats() {
+#[rstest]
+#[case::relative_to_absolute(
+    "relative_to_absolute",
+    "test.md",
+    "# Test Content\n\n[Link](other.md)",
+    true
+)]
+#[case::dot_slash("dot_slash", "doc.md", "# Documentation", false)]
+#[case::trailing_slash("trailing_slash", "file.md", "# Content", false)]
+#[allow(clippy::unwrap_used)]
+fn test_mv_same_file_path_variants_are_noops(
+    #[case] scenario: &str,
+    #[case] file_name: &str,
+    #[case] file_content: &str,
+    #[case] verify_references: bool,
+) {
     let temp_dir = TempDir::new().unwrap();
 
-    let file = temp_dir.path().join("test.md");
-    write_file(&file, "# Test Content\n\n[Link](other.md)");
+    let file = temp_dir.path().join(file_name);
+    write_file(&file, file_content);
 
-    // Create a reference file to verify no unintended side effects
     let ref_file = temp_dir.path().join("ref.md");
-    write_file(&ref_file, "[Test](test.md)");
+    let original_ref_content = if verify_references {
+        write_file(&ref_file, &format!("[Test]({file_name})"));
+        Some(fs::read_to_string(&ref_file).unwrap())
+    } else {
+        None
+    };
 
-    let original_ref_content = fs::read_to_string(&ref_file).unwrap();
+    let result = match scenario {
+        "relative_to_absolute" => {
+            let abs_path = file.canonicalize().unwrap();
+            with_current_dir(temp_dir.path(), || {
+                mv("./test.md", abs_path.to_str().unwrap(), ".", false)
+            })
+        }
+        "dot_slash" => with_current_dir(temp_dir.path(), || mv("./doc.md", "./doc.md", ".", false)),
+        "trailing_slash" => {
+            let path_with_slash = format!("{}/{}", temp_dir.path().to_str().unwrap(), file_name);
+            let path_without_slash = file.to_str().unwrap().to_string();
+            mv(
+                &path_with_slash,
+                &path_without_slash,
+                temp_dir.path(),
+                false,
+            )
+        }
+        _ => unreachable!("unsupported scenario: {scenario}"),
+    };
 
-    // Use different path formats that point to the same file
-    let abs_path = file.canonicalize().unwrap();
-    let rel_path = "./test.md";
-
-    // Change to temp directory to test relative path resolution
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = mv(rel_path, abs_path.to_str().unwrap(), ".", false);
-
-    // Restore original directory
-    std::env::set_current_dir(original_dir).unwrap();
-
-    // File must still exist with original content
-    assert!(file.exists(), "File should still exist");
+    assert!(file.exists(), "File should still exist after no-op move");
     let content = fs::read_to_string(&file).unwrap();
-    assert_eq!(content, "# Test Content\n\n[Link](other.md)");
+    assert_eq!(content, file_content);
 
-    // References should remain unchanged (no-op behavior)
-    let ref_content_after = fs::read_to_string(&ref_file).unwrap();
-    assert_eq!(
-        original_ref_content, ref_content_after,
-        "References should not be modified when source equals dest"
-    );
+    if let Some(original_ref_content) = original_ref_content {
+        let ref_content_after = fs::read_to_string(&ref_file).unwrap();
+        assert_eq!(
+            original_ref_content, ref_content_after,
+            "References should not be modified when source equals dest"
+        );
+    }
 
-    // Operation should succeed (no-op) or at least not corrupt data
     assert!(result.is_ok(), "Operation should succeed as no-op");
-}
-
-/// Moving a file to itself with "./" prefix on both paths.
-#[test]
-fn test_mv_dot_slash_paths() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let file = temp_dir.path().join("doc.md");
-    write_file(&file, "# Documentation");
-
-    let original_dir = std::env::current_dir().unwrap();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    // Both paths use "./" prefix - they refer to the same file
-    let result = mv("./doc.md", "./doc.md", ".", false);
-
-    std::env::set_current_dir(original_dir).unwrap();
-
-    assert!(file.exists(), "File must still exist");
-    let content = fs::read_to_string(&file).unwrap();
-    assert_eq!(content, "# Documentation");
-    assert!(result.is_ok(), "Should succeed as no-op");
 }
 
 /// Moving a file to itself should not modify references.
@@ -1055,32 +1069,6 @@ fn test_mv_same_path_preserves_references() {
     );
     assert_eq!(fs::read_to_string(&ref_file).unwrap(), original_ref_content);
     assert!(result.is_ok());
-}
-
-/// Moving file to itself with trailing slash in directory path.
-/// This tests path normalization edge cases.
-#[test]
-fn test_mv_with_trailing_slash_in_directory() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let file = temp_dir.path().join("file.md");
-    write_file(&file, "# Content");
-
-    // Path with trailing slash on directory portion
-    let path_with_slash = format!("{}/file.md", temp_dir.path().to_str().unwrap());
-    let path_without_slash = file.to_str().unwrap().to_string();
-
-    // These should be treated as the same file
-    let result = mv(
-        &path_with_slash,
-        &path_without_slash,
-        temp_dir.path(),
-        false,
-    );
-
-    assert!(file.exists(), "File must still exist");
-    assert_eq!(fs::read_to_string(&file).unwrap(), "# Content");
-    assert!(result.is_ok(), "Should succeed as no-op");
 }
 
 /// Moving file to itself with symlink (if supported by OS).
@@ -1123,58 +1111,35 @@ fn test_mv_symlink_to_same_file() {
 
 /// Move file containing pure anchor links (#section) should preserve them unchanged.
 /// Pure anchor links are internal to the document and should not be rewritten.
-#[test]
-fn test_mv_preserves_pure_anchor_links() {
+#[rstest]
+#[case::pure_anchor_only(
+    "# Title\n\n[Section](#section)\n\n[Another](#another-heading)\n\n## Section\n\n## Another Heading",
+    &["](#section)", "](#another-heading)"],
+    &[],
+    false
+)]
+#[case::mixed_anchor_and_file(
+    "[Internal](#intro)\n\n[Other](other.md)\n\n[Other Section](other.md#details)\n\n## Intro",
+    &["](#intro)"],
+    &["](../other.md)", "](../other.md#details)"],
+    true
+)]
+#[allow(clippy::unwrap_used)]
+fn test_mv_handles_anchor_link_variants(
+    #[case] source_content: &str,
+    #[case] preserved_links: &[&str],
+    #[case] rewritten_links: &[&str],
+    #[case] create_other_file: bool,
+) {
     let temp_dir = TempDir::new().unwrap();
 
-    let source_file = temp_dir.path().join("source.md");
-    write_file(
-        &source_file,
-        "# Title\n\n[Section](#section)\n\n[Another](#another-heading)\n\n## Section\n\n## Another Heading",
-    );
-
-    let target_file = temp_dir.path().join("sub").join("moved.md");
-    let result = mv(
-        source_file.to_str().unwrap(),
-        target_file.to_str().unwrap(),
-        temp_dir.path().to_str().unwrap(),
-        false,
-    );
-
-    assert!(
-        result.is_ok(),
-        "mv should not fail on pure anchor links: {:?}",
-        result.err()
-    );
-
-    let content = fs::read_to_string(&target_file).unwrap();
-    // Pure anchor links should remain exactly as-is
-    assert!(
-        content.contains("](#section)"),
-        "Pure anchor link (#section) should be preserved unchanged. Got: {}",
-        content
-    );
-    assert!(
-        content.contains("](#another-heading)"),
-        "Pure anchor link (#another-heading) should be preserved unchanged. Got: {}",
-        content
-    );
-}
-
-/// Move file with mixed pure anchor links and file links.
-/// Only file links should be updated; pure anchors should stay unchanged.
-#[test]
-fn test_mv_mixed_pure_anchor_and_file_links() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let other_file = temp_dir.path().join("other.md");
-    write_file(&other_file, "# Other");
+    if create_other_file {
+        let other_file = temp_dir.path().join("other.md");
+        write_file(&other_file, "# Other");
+    }
 
     let source_file = temp_dir.path().join("source.md");
-    write_file(
-        &source_file,
-        "[Internal](#intro)\n\n[Other](other.md)\n\n[Other Section](other.md#details)\n\n## Intro",
-    );
+    write_file(&source_file, source_content);
 
     let target_file = temp_dir.path().join("sub").join("moved.md");
     let result = mv(
@@ -1187,24 +1152,20 @@ fn test_mv_mixed_pure_anchor_and_file_links() {
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
 
     let content = fs::read_to_string(&target_file).unwrap();
-    // Pure anchor link should be unchanged
-    assert!(
-        content.contains("](#intro)"),
-        "Pure anchor link should be preserved. Got: {}",
-        content
-    );
-    // File link should be updated with relative path
-    assert!(
-        content.contains("](../other.md)"),
-        "File link should be updated. Got: {}",
-        content
-    );
-    // File link with anchor should be updated but anchor preserved
-    assert!(
-        content.contains("](../other.md#details)"),
-        "File link with anchor should be updated. Got: {}",
-        content
-    );
+    for preserved_link in preserved_links {
+        assert!(
+            content.contains(preserved_link),
+            "Expected preserved anchor link `{preserved_link}`. Got: {}",
+            content
+        );
+    }
+    for rewritten_link in rewritten_links {
+        assert!(
+            content.contains(rewritten_link),
+            "Expected rewritten anchor link `{rewritten_link}`. Got: {}",
+            content
+        );
+    }
 }
 
 /// Move file with anchor links, preserving the anchor fragments.
@@ -1438,11 +1399,12 @@ fn test_mv_destination_already_exists() {
         false,
     );
 
-    // The operation should fail
-    assert!(
-        result.is_err(),
-        "mv should return an error when destination already exists"
-    );
+    match result {
+        Err(MdrefError::Path(message)) => {
+            assert!(message.contains("Destination path already exists"));
+        }
+        other => panic!("expected path error for existing destination, got {other:?}"),
+    }
 
     // Source file should still exist (not moved)
     assert!(
