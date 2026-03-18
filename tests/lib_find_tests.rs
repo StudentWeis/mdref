@@ -37,7 +37,7 @@ fn test_find_links_returns_empty_for_non_markdown_file() {
     );
 }
 
-// ============= find_links basic functionality tests =============
+// ============= find_links core behavior tests =============
 
 /// find_links should correctly extract all markdown links from a file.
 #[test]
@@ -243,7 +243,7 @@ fn test_find_links_preserves_dot_slash_prefix() {
     );
 }
 
-// ============= find_references basic tests =============
+// ============= find_references core behavior tests =============
 
 /// find_references should find all files that reference the target file.
 #[test]

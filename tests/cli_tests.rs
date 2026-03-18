@@ -10,7 +10,7 @@ use common::{read_file, run_cli, temp_dir, write_file};
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_cli_find_basic() {
+fn test_cli_find_examples_root_reports_references_and_links() {
     let output = run_cli(&["find", "examples/main.md", "--root", "examples"]);
 
     assert!(output.status.success());
@@ -57,13 +57,11 @@ fn test_cli_mv_runtime_error_reports_exit_code_and_stderr() {
     assert!(stderr.contains("Error:"));
 }
 
-// ============= rename command tests =============
-
 // ============= version and help =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_cli_version() {
+fn test_cli_version_flag_prints_binary_version() {
     let output = run_cli(&["--version"]);
 
     assert!(output.status.success());
@@ -73,7 +71,7 @@ fn test_cli_version() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_cli_help() {
+fn test_cli_help_flag_lists_available_commands() {
     let output = run_cli(&["--help"]);
 
     assert!(output.status.success());
@@ -85,7 +83,7 @@ fn test_cli_help() {
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_cli_no_args() {
+fn test_cli_no_args_returns_nonzero_exit_status() {
     let output = run_cli(&[]);
 
     // clap should print usage/help and exit with error

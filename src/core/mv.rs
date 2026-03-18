@@ -810,7 +810,7 @@ mod tests {
 
     #[test]
     #[allow(clippy::unwrap_used)]
-    fn test_apply_replacements_basic() {
+    fn test_apply_replacements_single_link_rewrites_target_path() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("doc.md");
         write_file(file_path.to_str().unwrap(), "[Link](old.md)");

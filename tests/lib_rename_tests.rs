@@ -8,11 +8,11 @@ use common::{read_file, temp_dir, write_file};
 // Library tests for `rename` cover the rename semantics and reference updates.
 // CLI tests avoid duplicating these cases unless process behavior must be verified.
 
-// ============= Basic rename tests =============
+// ============= Rename core behavior tests =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
-fn test_rename_basic() {
+fn test_rename_same_directory_moves_file_to_new_name() {
     let temp_dir = temp_dir();
     let source = temp_dir.path().join("source.md");
     write_file(&source, "# Source File\n\nSome content.");

@@ -39,10 +39,10 @@ fn with_current_dir<T>(path: &Path, operation: impl FnOnce() -> T) -> T {
 // Library tests for `mv` cover path rewriting and filesystem mutations.
 // CLI tests keep only representative command wiring and process-contract checks.
 
-// ============= mv basic tests =============
+// ============= mv core behavior tests =============
 
 #[test]
-fn test_mv_basic() {
+fn test_mv_same_directory_moves_file_to_target_path() {
     let temp_dir = TempDir::new().unwrap();
 
     // Create test file

@@ -1,4 +1,3 @@
-- 可以阅读 doc 目录中的文档快速了解项目。
 - 注释应该是通用的、规范的、简洁的。
 - 遵循 TDD（测试驱动开发）的思路，优先编写测试，再编写实现代码。
 - 使用 context7 查询库文档。
@@ -10,3 +9,4 @@
 - 如使用 unwrap() 和 expect()，需添加 #[allow(clippy::unwrap_used)]、#[allow(clippy::expect_used)] 来避免 clippy 警告。
 - 使用 tempfile 库创建临时文件。
 - 使用 rstest 进行参数化测试。
+- 统一使用 `test_<对象>_<场景>_<预期>` 命名模式。

@@ -11,25 +11,6 @@
 
 ## P2：提高可读性与维护性
 
-### 7. 统一测试命名规范
-
-- [ ] 统一使用 `test_<对象>_<场景>_<预期>` 命名模式。
-- [ ] 重命名信息量不足的测试。
-- [ ] 避免继续新增 `basic`、`normal`、`simple` 这类泛化命名。
-
-**优先重命名示例：**
-
-- [ ] `test_cli_find_basic`
-- [ ] `test_cli_mv_basic`
-- [ ] `test_cli_rename_basic`
-- [ ] `test_find_links_basic`
-- [ ] `test_find_references_basic`
-- [ ] `test_rename_basic`
-
-**验收标准：**
-
-- [ ] 只看测试名即可大致判断场景与断言目标。
-
 ### 9. 统一 fixture 构造模式
 
 - [ ] 复用已有 benchmark fixture 的思路，整理常见测试目录结构模板。
