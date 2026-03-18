@@ -1,31 +1,133 @@
-use criterion::{Criterion, criterion_group, criterion_main};
-use mdref::find_references;
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use mdref::{find_links, find_references, mv};
 use std::hint::black_box;
 
-mod mock_generator;
+mod support;
 
-fn benchmark_find_references(c: &mut Criterion) {
-    // Generate mock data in a temporary directory before running benchmarks
-    let (_temp_dir, root_path) = mock_generator::generate().expect("Failed to generate mock data");
-    let filepath = root_path.join("root.md");
+use support::{FixtureProfile, build_fixture};
 
-    println!("Setting up benchmark in temp dir: {:?}", root_path);
+const FIND_PROFILES: &[FixtureProfile] = &[
+    FixtureProfile::Small,
+    FixtureProfile::Medium,
+    FixtureProfile::Large,
+];
+const MOVE_PROFILES: &[FixtureProfile] = &[FixtureProfile::Small, FixtureProfile::Medium];
 
-    c.bench_function("find_references", |b| {
-        b.iter(|| {
-            let result = find_references(black_box(&filepath), black_box(&root_path));
-            match result {
-                Ok(refs) => {
-                    let _ = black_box(refs);
-                }
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    panic!("Benchmark failed");
-                }
-            }
-        })
-    });
+fn benchmark_find_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("find");
+    group.sample_size(40);
+
+    for &profile in FIND_PROFILES {
+        let fixture = build_fixture(profile).expect("benchmark fixture generation should succeed");
+        let profile_label = profile.label();
+
+        group.throughput(Throughput::Bytes(
+            fixture.summary.representative_document_bytes as u64,
+        ));
+        group.bench_with_input(
+            BenchmarkId::new("find_links", profile_label),
+            &fixture.representative_document,
+            |b, document| {
+                b.iter(|| {
+                    let result = find_links(black_box(document))
+                        .expect("find_links benchmark should succeed");
+                    black_box(result);
+                });
+            },
+        );
+
+        group.throughput(Throughput::Elements(fixture.summary.markdown_files as u64));
+        group.bench_with_input(
+            BenchmarkId::new("find_references_file", profile_label),
+            &fixture,
+            |b, fixture| {
+                b.iter(|| {
+                    let result =
+                        find_references(black_box(&fixture.hot_file), black_box(&fixture.root))
+                            .expect("find_references benchmark should succeed");
+                    black_box(result);
+                });
+            },
+        );
+
+        group.throughput(Throughput::Elements(fixture.summary.markdown_files as u64));
+        group.bench_with_input(
+            BenchmarkId::new("find_references_directory", profile_label),
+            &fixture,
+            |b, fixture| {
+                b.iter(|| {
+                    let result = find_references(
+                        black_box(&fixture.hot_directory),
+                        black_box(&fixture.root),
+                    )
+                    .expect("find_references directory benchmark should succeed");
+                    black_box(result);
+                });
+            },
+        );
+    }
+
+    group.finish();
 }
 
-criterion_group!(benches, benchmark_find_references);
+fn benchmark_move_operations(c: &mut Criterion) {
+    let mut group = c.benchmark_group("move");
+    group.sample_size(10);
+
+    for &profile in MOVE_PROFILES {
+        let profile_label = profile.label();
+
+        let file_fixture =
+            build_fixture(profile).expect("benchmark fixture generation should succeed");
+        group.throughput(Throughput::Elements(
+            file_fixture.summary.hot_file_references as u64,
+        ));
+        group.bench_function(BenchmarkId::new("mv_file", profile_label), move |b| {
+            b.iter_batched(
+                || build_fixture(profile).expect("benchmark fixture generation should succeed"),
+                |fixture| {
+                    mv(
+                        black_box(&fixture.hot_file),
+                        black_box(&fixture.move_file_destination),
+                        black_box(&fixture.root),
+                        false,
+                    )
+                    .expect("mv file benchmark should succeed");
+                    black_box(fixture);
+                },
+                BatchSize::LargeInput,
+            );
+        });
+
+        let directory_fixture =
+            build_fixture(profile).expect("benchmark fixture generation should succeed");
+        group.throughput(Throughput::Elements(
+            directory_fixture.summary.bundle_directory_references as u64,
+        ));
+        group.bench_function(BenchmarkId::new("mv_directory", profile_label), move |b| {
+            b.iter_batched(
+                || build_fixture(profile).expect("benchmark fixture generation should succeed"),
+                |fixture| {
+                    mv(
+                        black_box(&fixture.hot_directory),
+                        black_box(&fixture.move_directory_destination),
+                        black_box(&fixture.root),
+                        false,
+                    )
+                    .expect("mv directory benchmark should succeed");
+                    black_box(fixture);
+                },
+                BatchSize::LargeInput,
+            );
+        });
+    }
+
+    group.finish();
+}
+
+criterion_group!(
+    benches,
+    benchmark_find_operations,
+    benchmark_move_operations
+);
 criterion_main!(benches);

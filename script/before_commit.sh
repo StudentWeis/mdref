@@ -5,5 +5,5 @@ set -e
 ./script/precheck.sh
 ./script/record_build_size.sh
 
-# Run benchmarks to ensure the performance is not regressed before committing
-cargo bench --bench benchmark
+# Run a quick benchmark smoke check before committing
+./script/bench.sh quick
