@@ -1,27 +1,19 @@
 use mdref::rename;
 use rstest::rstest;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
-use tempfile::TempDir;
 
-// Test helper function: create test file
-#[allow(clippy::unwrap_used)]
-fn write_file<P: AsRef<Path>>(path: P, content: &str) {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    let mut file = fs::File::create(path).unwrap();
-    file.write_all(content.as_bytes()).unwrap();
-}
+mod common;
+
+use common::{read_file, temp_dir, write_file};
+
+// Library tests for `rename` cover the rename semantics and reference updates.
+// CLI tests avoid duplicating these cases unless process behavior must be verified.
 
 // ============= Basic rename tests =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_basic() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("source.md");
     write_file(&source, "# Source File\n\nSome content.");
 
@@ -35,7 +27,7 @@ fn test_rename_basic() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_preserves_content() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let content = "# Title\n\nParagraph with **bold** and *italic*.\n\n- item 1\n- item 2";
     let source = temp_dir.path().join("doc.md");
     write_file(&source, content);
@@ -43,7 +35,7 @@ fn test_rename_preserves_content() {
     rename(&source, "doc_renamed.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("doc_renamed.md");
-    let result_content = fs::read_to_string(&renamed_path).unwrap();
+    let result_content = read_file(&renamed_path);
     assert!(result_content.contains("# Title"));
     assert!(result_content.contains("**bold**"));
     assert!(result_content.contains("- item 1"));
@@ -54,7 +46,7 @@ fn test_rename_preserves_content() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_updates_external_references() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("original.md");
     write_file(&source, "# Original");
@@ -64,7 +56,7 @@ fn test_rename_updates_external_references() {
 
     rename(&source, "updated.md", temp_dir.path(), false).unwrap();
 
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("updated.md"));
     assert!(!ref_content.contains("original.md"));
 }
@@ -72,7 +64,7 @@ fn test_rename_updates_external_references() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_updates_multiple_external_references() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("target.md");
     write_file(&source, "# Target");
@@ -86,9 +78,9 @@ fn test_rename_updates_multiple_external_references() {
 
     rename(&source, "new_target.md", temp_dir.path(), false).unwrap();
 
-    let ref1_content = fs::read_to_string(&ref1).unwrap();
-    let ref2_content = fs::read_to_string(&ref2).unwrap();
-    let ref3_content = fs::read_to_string(&ref3).unwrap();
+    let ref1_content = read_file(&ref1);
+    let ref2_content = read_file(&ref2);
+    let ref3_content = read_file(&ref3);
 
     assert!(ref1_content.contains("new_target.md"));
     assert!(ref2_content.contains("new_target.md"));
@@ -100,7 +92,7 @@ fn test_rename_updates_multiple_external_references() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_updates_self_reference() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("page.md");
     write_file(&source, "[Self link](page.md)");
@@ -108,7 +100,7 @@ fn test_rename_updates_self_reference() {
     rename(&source, "page_v2.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("page_v2.md");
-    let content = fs::read_to_string(&renamed_path).unwrap();
+    let content = read_file(&renamed_path);
     assert!(content.contains("page_v2.md"));
     assert!(!content.contains("page.md"));
 }
@@ -116,7 +108,7 @@ fn test_rename_updates_self_reference() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_preserves_internal_links_to_other_files() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let other = temp_dir.path().join("other.md");
     write_file(&other, "# Other");
@@ -127,7 +119,7 @@ fn test_rename_preserves_internal_links_to_other_files() {
     rename(&source, "source_v2.md", temp_dir.path(), false).unwrap();
 
     let renamed_path = temp_dir.path().join("source_v2.md");
-    let content = fs::read_to_string(&renamed_path).unwrap();
+    let content = read_file(&renamed_path);
     // Renamed in same directory, so link to other.md should remain unchanged
     assert!(content.contains("other.md"));
 }
@@ -137,7 +129,7 @@ fn test_rename_preserves_internal_links_to_other_files() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_in_subdirectory() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("sub").join("deep.md");
     write_file(&source, "# Deep file");
@@ -149,7 +141,7 @@ fn test_rename_in_subdirectory() {
 
     assert!(temp_dir.path().join("sub").join("shallow.md").exists());
 
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("sub/shallow.md"));
     assert!(!ref_content.contains("sub/deep.md"));
 }
@@ -158,7 +150,7 @@ fn test_rename_in_subdirectory() {
 
 #[test]
 fn test_rename_nonexistent_file() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let result = rename(
         temp_dir.path().join("ghost.md"),
@@ -182,7 +174,7 @@ fn test_rename_unicode_filename(
     #[case] new_name: &str,
     #[case] content: &str,
 ) {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join(old_name);
     write_file(&source, content);
 
@@ -197,7 +189,7 @@ fn test_rename_unicode_filename(
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_ascii_to_unicode() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("document.md");
     write_file(&source, "# Document");
 
@@ -211,7 +203,7 @@ fn test_rename_ascii_to_unicode() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_unicode_updates_references() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("原始文档.md");
     write_file(&source, "# 原始文档");
@@ -221,7 +213,7 @@ fn test_rename_unicode_updates_references() {
 
     rename(&source, "更新文档.md", temp_dir.path(), false).unwrap();
 
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("更新文档.md"));
     assert!(!ref_content.contains("原始文档.md"));
 }
@@ -230,7 +222,7 @@ fn test_rename_unicode_updates_references() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_japanese_filename() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("旧文件.md");
     write_file(&source, "# ドキュメント");
 
@@ -244,7 +236,7 @@ fn test_rename_japanese_filename() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_emoji_filename() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("📝笔记.md");
     write_file(&source, "# Notes");
 

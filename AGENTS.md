@@ -7,6 +7,6 @@
 
 测试相关：
 
-- 如果单测中使用了 unwrap() 和 expect()，需添加 #[allow(clippy::unwrap_used)]、#[allow(clippy::expect_used)] 来避免 clippy 警告。
-- 测试方法如需要创建文件必须使用 tempfile 库来创建临时文件。
-- 可以使用 rstest 库简化测试的编写。
+- 如使用 unwrap() 和 expect()，需添加 #[allow(clippy::unwrap_used)]、#[allow(clippy::expect_used)] 来避免 clippy 警告。
+- 使用 tempfile 库创建临时文件。
+- 使用 rstest 进行参数化测试。

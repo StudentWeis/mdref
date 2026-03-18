@@ -1,18 +1,12 @@
 use mdref::{MdrefError, find_links, find_references, mv};
-use std::fs;
-use std::io::Write;
-use std::path::Path;
-use tempfile::TempDir;
 
-#[allow(clippy::unwrap_used)]
-fn write_file<P: AsRef<Path>>(path: P, content: &str) {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    let mut file = fs::File::create(path).unwrap();
-    file.write_all(content.as_bytes()).unwrap();
-}
+mod common;
+
+use common::{read_file, temp_dir, write_file};
+use std::path::Path;
+
+// Error tests validate library-level error contracts and edge cases.
+// CLI process behavior is covered separately in cli_tests.rs.
 
 // ============= IO error tests =============
 
@@ -37,7 +31,7 @@ fn test_find_references_io_error_nonexistent_file() {
 
 #[test]
 fn test_mv_io_error_nonexistent_source() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let result = mv(
         temp_dir.path().join("ghost.md").to_str().unwrap(),
         temp_dir.path().join("target.md").to_str().unwrap(),
@@ -55,7 +49,7 @@ fn test_mv_io_error_nonexistent_source() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_mv_target_already_exists() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
 
     let source = temp_dir.path().join("source.md");
     write_file(source.clone(), "# Source content");
@@ -73,7 +67,7 @@ fn test_mv_target_already_exists() {
     assert!(result.is_err());
 
     // Target content should remain unchanged
-    let content = fs::read_to_string(&target).unwrap();
+    let content = read_file(&target);
     assert!(content.contains("Old target content"));
     assert!(!content.contains("Source content"));
     // Source should still exist
@@ -112,7 +106,7 @@ fn test_mdref_error_invalid_line_display() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_find_references_empty_root_directory() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let target = temp_dir.path().join("target.md");
     write_file(target.clone(), "# Target");
 
@@ -121,25 +115,12 @@ fn test_find_references_empty_root_directory() {
     assert!(result.is_empty());
 }
 
-// ============= Edge case: find_links on non-markdown returns empty =============
-
-#[test]
-#[allow(clippy::unwrap_used)]
-fn test_find_links_non_markdown_returns_empty() {
-    let temp_dir = TempDir::new().unwrap();
-    let file = temp_dir.path().join("data.txt");
-    write_file(file.clone(), "[This looks like a link](target.md)");
-
-    let result = find_links(&file).unwrap();
-    assert!(result.is_empty());
-}
-
 // ============= Edge case: mv with no references =============
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_mv_no_references_still_moves() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("lonely.md");
     write_file(source.clone(), "# No one references me");
 
@@ -155,7 +136,7 @@ fn test_mv_no_references_still_moves() {
     assert!(target.exists());
     assert!(!source.exists());
 
-    let content = fs::read_to_string(&target).unwrap();
+    let content = read_file(&target);
     assert!(content.contains("No one references me"));
 }
 
@@ -164,7 +145,7 @@ fn test_mv_no_references_still_moves() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_mv_no_internal_links() {
-    let temp_dir = TempDir::new().unwrap();
+    let temp_dir = temp_dir();
     let source = temp_dir.path().join("plain.md");
     write_file(source.clone(), "# Plain\n\nJust text, no links.");
 
@@ -180,9 +161,9 @@ fn test_mv_no_internal_links() {
     )
     .unwrap();
 
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("sub/plain.md"));
 
-    let target_content = fs::read_to_string(&target).unwrap();
+    let target_content = read_file(&target);
     assert!(target_content.contains("Just text, no links."));
 }

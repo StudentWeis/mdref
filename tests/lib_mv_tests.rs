@@ -1,21 +1,15 @@
 use mdref::{find_links, find_references, mv};
 use rstest::rstest;
 use std::fs;
-use std::io::Write;
 use std::os::unix::fs::PermissionsExt;
-use std::path::Path;
 use tempfile::TempDir;
 
-// Test helper function: create test file
-#[allow(clippy::unwrap_used)]
-fn write_file<P: AsRef<Path>>(path: P, content: &str) {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    let mut file = fs::File::create(path).unwrap();
-    file.write_all(content.as_bytes()).unwrap();
-}
+mod common;
+
+use common::write_file;
+
+// Library tests for `mv` cover path rewriting and filesystem mutations.
+// CLI tests keep only representative command wiring and process-contract checks.
 
 // ============= mv basic tests =============
 

@@ -5,15 +5,12 @@ use std::io::Write;
 use std::path::Path;
 use tempfile::TempDir;
 
-#[allow(clippy::unwrap_used)]
-fn write_file<P: AsRef<Path>>(path: P, content: &str) {
-    let path = path.as_ref();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).ok();
-    }
-    let mut file = fs::File::create(path).unwrap();
-    file.write_all(content.as_bytes()).unwrap();
-}
+mod common;
+
+use common::write_file;
+
+// Library tests for `find_*` focus on core parsing and filesystem behavior.
+// Output formatting and process exit behavior belong to CLI tests.
 
 // ============= find_links error handling tests =============
 
