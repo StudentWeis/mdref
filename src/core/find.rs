@@ -12,7 +12,7 @@ use comrak::{
 use rayon::prelude::*;
 use walkdir::WalkDir;
 
-use super::util::{is_external_url, strip_anchor, url_decode_link};
+use super::util::{is_external_url, strip_anchor, strip_utf8_bom_prefix, url_decode_link};
 use crate::{Reference, Result};
 
 /// Find all references to a given file within Markdown files in the specified root directory.
@@ -173,13 +173,6 @@ fn parse_link_reference_definitions(
     }
 
     definitions
-}
-
-fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
-    match line.strip_prefix('\u{feff}') {
-        Some(stripped) => (stripped, '\u{feff}'.len_utf8()),
-        None => (line, 0),
-    }
 }
 
 fn collect_ignored_reference_definition_lines<'a>(root: &'a AstNode<'a>) -> HashSet<usize> {

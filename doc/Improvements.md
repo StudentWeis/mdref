@@ -2,6 +2,60 @@
 
 本文档记录 `mdref` 项目当前的缺陷、改进点及优先级建议。
 
+## 代码缺陷
+
+### P0: `url_decode_link` 不支持多字节 UTF-8
+
+**文件**：`src/core/util.rs` — `url_decode_link()`
+
+**问题**：当前实现将每个 `%XX` 解码为单个 `u8` 后直接 `as char`。对 ASCII 范围内的字符没问题，但对多字节 UTF-8 字符（如中文文件名 `%E4%B8%AD` → `中`）会产生错误结果——每个字节被独立转成无意义的 char。
+
+**影响**：包含中文、日文等非 ASCII 字符的文件名在 URL 编码后无法正确解析。
+
+**修复方向**：
+- 使用 `percent-encoding` crate，或
+- 手动收集连续的 `%XX` 字节序列后通过 `String::from_utf8` 组合解码
+
+### P1: 缺少 `.gitignore` 感知
+
+**文件**：`src/core/find.rs` — `find_references()`、`src/core/mv.rs` — `collect_markdown_files()`
+
+**问题**：`walkdir` 会遍历 `.git`、`node_modules`、`target` 等目录中的 `.md` 文件。在大型项目中既浪费性能，也可能产生误匹配。
+
+**修复方向**：使用 `ignore` crate（ripgrep 使用的同一个库）替代 `walkdir`，自动尊重 `.gitignore` 规则。
+
+### P2: 同文件系统移动未优先使用 `fs::rename`
+
+**文件**：`src/core/mv.rs` — `mv_regular_file()`
+
+**问题**：当前使用 `fs::copy` + `fs::remove_file` 实现文件移动。对于同一文件系统内的移动，`fs::rename` 是原子操作且更高效。copy-then-delete 方式在大文件场景下性能差，且在 copy 成功但 delete 失败时会留下重复文件。
+
+**修复方向**：优先尝试 `fs::rename`，失败时（跨文件系统）再 fallback 到 copy + delete。
+
+### P2: README Todo 列表过期
+
+**文件**：`README.md`
+
+**问题**：
+- "Directory path support" 已实现（`mv_directory` 函数已存在），但 Todo 仍标记为未完成
+- 安装链接硬编码了版本号 `0.4.1`，每次发版需手动更新
+
+### P3: 测试辅助函数重复定义
+
+**文件**：`src/core/find.rs`、`src/core/mv.rs`、`src/core/rename.rs`、`src/commands/find.rs` 等
+
+**问题**：`write_file` 测试辅助函数重复定义了 4 次，且签名不一致（有的接受 `&Path`，有的接受 `&str`）。
+
+**修复方向**：提取到 `tests/common/mod.rs` 中统一使用。
+
+### P3: `process_md_file` 注释步骤编号跳跃
+
+**文件**：`src/core/find.rs` — `process_md_file()`
+
+**问题**：注释中步骤编号从 Step 1 → Step 2 → Step 4，缺少 Step 3，疑似重构后遗留。
+
+---
+
 ## 代码质量问题
 
 ### 错误处理粒度不够

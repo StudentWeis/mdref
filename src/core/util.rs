@@ -4,6 +4,17 @@ use pathdiff::diff_paths;
 
 use crate::{MdrefError, Result};
 
+/// Strip the UTF-8 BOM (Byte Order Mark) prefix from a line.
+///
+/// UTF-8 BOM is the character U+FEFF, which may appear at the start of a file.
+/// Returns a tuple of (stripped_line, bom_length) where bom_length is 0 if no BOM.
+pub fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
+    match line.strip_prefix('\u{feff}') {
+        Some(stripped) => (stripped, '\u{feff}'.len_utf8()),
+        None => (line, 0),
+    }
+}
+
 /// Decode URL percent-encoded characters in a link.
 ///
 /// This function decodes common URL encodings like `%20` (space), `%2B` (+), etc.

@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use super::{
     model::{LinkReplacement, MoveTransaction},
-    util::{is_external_url, relative_path, url_decode_link},
+    util::{is_external_url, relative_path, strip_utf8_bom_prefix, url_decode_link},
 };
 use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references};
 
@@ -876,13 +876,6 @@ fn split_lines_preserving_endings(content: &str) -> Vec<(String, LineEnding)> {
     }
 
     lines
-}
-
-fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
-    match line.strip_prefix('\u{feff}') {
-        Some(stripped) => (stripped, '\u{feff}'.len_utf8()),
-        None => (line, 0),
-    }
 }
 
 fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
