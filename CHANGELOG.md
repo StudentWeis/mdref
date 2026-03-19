@@ -2,6 +2,38 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.2] - 2026-03-19
+
+### 🚀 Features
+
+- Enhance link reference handling in mv functionality by @StudentWeis
+- Enhance testing framework by @StudentWeis
+- Add rtk rewrite hook and enhance directory move tests for resource references by @StudentWeis
+- Implement directory move functionality with reference updates and rollback support by @StudentWeis
+- Implement link reference definition parsing and update by @StudentWeis
+- Enhance link resolution by adding URL decoding for paths and improve error handling by @StudentWeis
+
+### 🚜 Refactor
+
+- Deduplicate strip_utf8_bom_prefix function by @StudentWeis
+- Update dependencies and improve code organization across multiple files by @StudentWeis
+- Update benchmark metrics to include directory move rewrites and enhance fixture tests by @StudentWeis
+- Streamline move operation handling in benchmarks and tests by @StudentWeis
+- Enhance error handling for UTF-8 input in find_links and find_references by @StudentWeis
+- Enhance test fixtures for improved readability and maintainability by @StudentWeis
+- Standardize test naming conventions and improve test descriptions by @StudentWeis
+- Streamline error handling and enhance test coverage for mv functionality by @StudentWeis
+- Enhance tests and command output handling by @StudentWeis
+- Rename identifier for clarity by @StudentWeis
+
+### ⚙️ Miscellaneous Tasks
+
+- Format shell scripts for consistency and readability by @StudentWeis
+- Add Unicode tests by @StudentWeis
+- Standardize shebang and add error handling in script files by @StudentWeis
+- Add confirmation prompt before executing cargo release in update_version script by @StudentWeis
+- Implement comprehensive benchmarking framework and tests by @StudentWeis
+
 ## [0.4.1] - 2026-03-16
 
 ### 🚀 Features

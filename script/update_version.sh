@@ -23,6 +23,13 @@ echo "Updating version to: $NEW_VERSION ..."
 # Replace version under [package]
 perl -i -0777 -pe "s/(\[package\]\n(?:.*\n)*?version\s*=\s*\").*?\"/\${1}$NEW_VERSION\"/m" "$CARGO_TOML"
 
+# Update version in README.md installation links
+README_MD="README.md"
+if [ -f "$README_MD" ]; then
+	echo "Updating version in $README_MD ..."
+	perl -i -pe "s|releases/download/[0-9]+\.[0-9]+\.[0-9]+|releases/download/$NEW_VERSION|g" "$README_MD"
+fi
+
 # Update CHANGELOG.md using git cliff
 git cliff --unreleased --tag $NEW_VERSION --prepend CHANGELOG.md
 
@@ -35,7 +42,7 @@ while true; do
 	case "$REPLY" in
 	[Yy]*)
 		echo "Running cargo release --execute..."
-		cargo release
+		cargo release --execute
 		break
 		;;
 	[Nn]*)
