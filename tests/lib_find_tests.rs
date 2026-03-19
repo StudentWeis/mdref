@@ -7,7 +7,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::write_file;
+use common::{fixture_multi_file_reference, fixture_unicode_paths, write_file};
 
 // Library tests for `find_*` focus on core parsing and filesystem behavior.
 // Output formatting and process exit behavior belong to CLI tests.
@@ -249,21 +249,10 @@ fn test_find_links_preserves_dot_slash_prefix() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_find_references_finds_referencing_files() {
-    let temp_dir = TempDir::new().unwrap();
+    let fixture = fixture_multi_file_reference();
 
-    // Create target file
-    let target = temp_dir.path().join("target.md");
-    write_file(&target, "# Target");
-
-    // Create files that reference the target
-    let ref1 = temp_dir.path().join("ref1.md");
-    write_file(&ref1, "See [target](target.md)");
-
-    let ref2 = temp_dir.path().join("ref2.md");
-    write_file(&ref2, "Check [this](target.md)");
-
-    let result = find_references(&target, temp_dir.path()).unwrap();
-    assert_eq!(result.len(), 2, "Should find 2 files referencing target.md");
+    let result = find_references(&fixture.target, &fixture.root).unwrap();
+    assert_eq!(result.len(), 3, "Should find 3 files referencing target.md");
 }
 
 /// find_references should return an error when target file does not exist.
@@ -493,15 +482,14 @@ fn test_find_references_handles_unicode_paths(
     #[case] reference_content: &str,
     #[case] expected_link_text: &str,
 ) {
-    let temp_dir = TempDir::new().unwrap();
-
-    let target = temp_dir.path().join(target_relative_path);
+    let fixture = fixture_unicode_paths();
+    let target = fixture.root.join(target_relative_path);
     write_file(&target, target_content);
 
-    let ref_file = temp_dir.path().join(reference_name);
+    let ref_file = fixture.root.join(reference_name);
     write_file(&ref_file, reference_content);
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, &fixture.root).unwrap();
     assert_eq!(result.len(), 1, "Should find one Unicode reference");
     assert_eq!(result[0].link_text, expected_link_text);
 }

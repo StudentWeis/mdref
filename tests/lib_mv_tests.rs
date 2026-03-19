@@ -8,7 +8,7 @@ use tempfile::TempDir;
 
 mod common;
 
-use common::write_file;
+use common::{fixture_directory_move, fixture_unicode_paths, write_file};
 
 static CURRENT_DIR_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -545,28 +545,16 @@ fn test_mv_from_subdir_to_root() {
 
 #[test]
 fn test_mv_directory_updates_external_references() {
-    let temp_dir = TempDir::new().unwrap();
+    let fixture = fixture_directory_move();
+    let target_parent = fixture.root.join("archive");
 
-    let source_dir = temp_dir.path().join("docs");
-    let guide_file = source_dir.join("guide.md");
-    let nested_file = source_dir.join("nested").join("topic.md");
-    write_file(&guide_file, "# Guide");
-    write_file(&nested_file, "# Topic");
+    mv(&fixture.source_dir, &target_parent, &fixture.root, false).unwrap();
 
-    let ref_file = temp_dir.path().join("index.md");
-    write_file(
-        &ref_file,
-        "[Guide](docs/guide.md)\n\n[Topic](docs/nested/topic.md)",
-    );
+    assert!(target_parent.join("guide.md").exists());
+    assert!(target_parent.join("nested").join("topic.md").exists());
+    assert!(!fixture.source_dir.exists());
 
-    let target_dir = temp_dir.path().join("archive");
-    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
-
-    assert!(target_dir.join("guide.md").exists());
-    assert!(target_dir.join("nested").join("topic.md").exists());
-    assert!(!source_dir.exists());
-
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = fs::read_to_string(&fixture.external_reference).unwrap();
     assert!(ref_content.contains("archive/guide.md"));
     assert!(ref_content.contains("archive/nested/topic.md"));
     assert!(!ref_content.contains("docs/guide.md"));
@@ -575,36 +563,33 @@ fn test_mv_directory_updates_external_references() {
 
 #[test]
 fn test_mv_directory_updates_internal_links_to_outside_files() {
-    let temp_dir = TempDir::new().unwrap();
+    let fixture = fixture_directory_move();
+    mv(
+        &fixture.source_dir,
+        &fixture.destination_dir,
+        &fixture.root,
+        false,
+    )
+    .unwrap();
 
-    let source_dir = temp_dir.path().join("docs");
-    let nested_file = source_dir.join("guide.md");
-    let external_file = temp_dir.path().join("shared").join("faq.md");
-    write_file(&external_file, "# FAQ");
-    write_file(&nested_file, "[FAQ](../shared/faq.md)");
-
-    let target_dir = temp_dir.path().join("archive").join("docs");
-    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
-
-    let moved_content = fs::read_to_string(target_dir.join("guide.md")).unwrap();
+    let moved_content = fs::read_to_string(fixture.destination_dir.join("guide.md")).unwrap();
     assert!(moved_content.contains("../../shared/faq.md"));
 }
 
 #[test]
 fn test_mv_directory_preserves_internal_links_within_directory() {
-    let temp_dir = TempDir::new().unwrap();
+    let fixture = fixture_directory_move();
+    mv(
+        &fixture.source_dir,
+        &fixture.destination_dir,
+        &fixture.root,
+        false,
+    )
+    .unwrap();
 
-    let source_dir = temp_dir.path().join("docs");
-    let guide_file = source_dir.join("guide.md");
-    let topic_file = source_dir.join("nested").join("topic.md");
-    write_file(&guide_file, "[Topic](nested/topic.md)");
-    write_file(&topic_file, "[Guide](../guide.md)");
-
-    let target_dir = temp_dir.path().join("archive").join("docs");
-    mv(&source_dir, &target_dir, temp_dir.path(), false).unwrap();
-
-    let moved_guide = fs::read_to_string(target_dir.join("guide.md")).unwrap();
-    let moved_topic = fs::read_to_string(target_dir.join("nested").join("topic.md")).unwrap();
+    let moved_guide = fs::read_to_string(fixture.destination_dir.join("guide.md")).unwrap();
+    let moved_topic =
+        fs::read_to_string(fixture.destination_dir.join("nested").join("topic.md")).unwrap();
     assert!(moved_guide.contains("nested/topic.md"));
     assert!(moved_topic.contains("../guide.md"));
 }
@@ -2308,26 +2293,17 @@ fn test_mv_chinese_to_subdirectory() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_mv_unicode_updates_references() {
-    let temp_dir = TempDir::new().unwrap();
-
-    let source_file = temp_dir.path().join("原始文档.md");
-    write_file(&source_file, "# 原始文档");
-
-    let ref_file = temp_dir.path().join("索引.md");
-    write_file(&ref_file, "请查看 [原始文档](原始文档.md) 获取更多信息。");
-
-    let target_file = temp_dir.path().join("归档").join("更新文档.md");
-
+    let fixture = fixture_unicode_paths();
     let result = mv(
-        source_file.to_str().unwrap(),
-        target_file.to_str().unwrap(),
-        temp_dir.path().to_str().unwrap(),
+        fixture.source.to_str().unwrap(),
+        fixture.destination.to_str().unwrap(),
+        fixture.root.to_str().unwrap(),
         false,
     );
 
     assert!(result.is_ok());
 
-    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    let ref_content = fs::read_to_string(&fixture.reference).unwrap();
     assert!(
         ref_content.contains("归档/更新文档.md"),
         "Reference should be updated. Got: {}",

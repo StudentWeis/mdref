@@ -3,7 +3,10 @@ use rstest::rstest;
 
 mod common;
 
-use common::{read_file, temp_dir, write_file};
+use common::{
+    fixture_multi_file_reference, fixture_single_file_reference, fixture_unicode_paths, read_file,
+    temp_dir, write_file,
+};
 
 // Library tests for `rename` cover the rename semantics and reference updates.
 // CLI tests avoid duplicating these cases unless process behavior must be verified.
@@ -46,41 +49,28 @@ fn test_rename_preserves_content() {
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_updates_external_references() {
-    let temp_dir = temp_dir();
+    let fixture = fixture_single_file_reference();
+    let source = fixture.target;
+    let ref_file = fixture.reference;
 
-    let source = temp_dir.path().join("original.md");
-    write_file(&source, "# Original");
-
-    let ref_file = temp_dir.path().join("index.md");
-    write_file(&ref_file, "See [original doc](original.md) for details.");
-
-    rename(&source, "updated.md", temp_dir.path(), false).unwrap();
+    rename(&source, "updated.md", &fixture.root, false).unwrap();
 
     let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("updated.md"));
-    assert!(!ref_content.contains("original.md"));
+    assert!(!ref_content.contains("target.md"));
 }
 
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_updates_multiple_external_references() {
-    let temp_dir = temp_dir();
+    let fixture = fixture_multi_file_reference();
+    let source = fixture.target;
 
-    let source = temp_dir.path().join("target.md");
-    write_file(&source, "# Target");
+    rename(&source, "new_target.md", &fixture.root, false).unwrap();
 
-    let ref1 = temp_dir.path().join("ref1.md");
-    let ref2 = temp_dir.path().join("ref2.md");
-    let ref3 = temp_dir.path().join("sub").join("ref3.md");
-    write_file(&ref1, "[Link](target.md)");
-    write_file(&ref2, "[Another](target.md)");
-    write_file(&ref3, "[Deep](../target.md)");
-
-    rename(&source, "new_target.md", temp_dir.path(), false).unwrap();
-
-    let ref1_content = read_file(&ref1);
-    let ref2_content = read_file(&ref2);
-    let ref3_content = read_file(&ref3);
+    let ref1_content = read_file(&fixture.primary_reference);
+    let ref2_content = read_file(&fixture.secondary_reference);
+    let ref3_content = read_file(&fixture.nested_reference);
 
     assert!(ref1_content.contains("new_target.md"));
     assert!(ref2_content.contains("new_target.md"));
@@ -190,17 +180,11 @@ fn test_rename_unicode_filename(
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_rename_unicode_updates_references() {
-    let temp_dir = temp_dir();
+    let fixture = fixture_unicode_paths();
 
-    let source = temp_dir.path().join("原始文档.md");
-    write_file(&source, "# 原始文档");
+    rename(&fixture.source, "更新文档.md", &fixture.root, false).unwrap();
 
-    let ref_file = temp_dir.path().join("索引.md");
-    write_file(&ref_file, "参考 [原始文档](原始文档.md) 获取更多信息。");
-
-    rename(&source, "更新文档.md", temp_dir.path(), false).unwrap();
-
-    let ref_content = read_file(&ref_file);
+    let ref_content = read_file(&fixture.reference);
     assert!(ref_content.contains("更新文档.md"));
     assert!(!ref_content.contains("原始文档.md"));
 }
