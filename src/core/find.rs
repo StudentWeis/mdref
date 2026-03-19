@@ -1,10 +1,15 @@
-use comrak::Arena;
-use comrak::nodes::{AstNode, NodeValue};
-use comrak::parse_document;
+use std::{
+    collections::HashSet,
+    fs,
+    path::{Path, PathBuf},
+};
+
+use comrak::{
+    Arena,
+    nodes::{AstNode, NodeValue},
+    parse_document,
+};
 use rayon::prelude::*;
-use std::collections::HashSet;
-use std::fs;
-use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
 use super::util::{is_external_url, strip_anchor, url_decode_link};
@@ -384,10 +389,11 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-    use std::io::Write;
+    use std::{fs, io::Write};
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &Path, content: &str) {

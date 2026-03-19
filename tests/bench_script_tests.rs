@@ -1,10 +1,12 @@
 #![cfg(unix)]
 
-use std::env;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::{
+    env, fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    process::Command,
+};
+
 use tempfile::TempDir;
 
 #[allow(clippy::unwrap_used)]

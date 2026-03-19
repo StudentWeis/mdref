@@ -43,11 +43,12 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, io::Write};
+
+    use tempfile::TempDir;
+
     use super::*;
     use crate::MdrefError;
-    use std::fs;
-    use std::io::Write;
-    use tempfile::TempDir;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &Path, content: &str) {

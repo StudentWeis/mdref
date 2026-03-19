@@ -1,12 +1,16 @@
-use std::collections::{HashMap, HashSet};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::{Path, PathBuf},
+};
 
 use pathdiff::diff_paths;
 use walkdir::WalkDir;
 
-use super::model::{LinkReplacement, MoveTransaction};
-use super::util::{is_external_url, relative_path, url_decode_link};
+use super::{
+    model::{LinkReplacement, MoveTransaction},
+    util::{is_external_url, relative_path, url_decode_link},
+};
 use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references};
 
 type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
@@ -981,9 +985,11 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::io::Write;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &str, content: &str) {

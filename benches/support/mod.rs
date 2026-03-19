@@ -1,9 +1,12 @@
+use std::{
+    fs,
+    hint::black_box,
+    io,
+    path::{Path, PathBuf},
+};
+
 use mdref::{Result, mv};
 use pathdiff::diff_paths;
-use std::fs;
-use std::hint::black_box;
-use std::io;
-use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 const FIXED_MARKDOWN_FILES: usize = 4;

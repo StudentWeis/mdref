@@ -23,10 +23,11 @@ fn run_with_writer<W: Write>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-    use std::path::Path;
+    use std::{fs, path::Path};
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &Path, content: &str) {

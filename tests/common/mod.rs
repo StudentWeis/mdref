@@ -1,10 +1,13 @@
 #![allow(clippy::unwrap_used)]
 #![allow(dead_code)]
 
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    process::{Command, Output},
+};
+
 use tempfile::TempDir;
 
 fn binary_path() -> PathBuf {

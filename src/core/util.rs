@@ -1,5 +1,6 @@
-use pathdiff::diff_paths;
 use std::path::{Path, PathBuf};
+
+use pathdiff::diff_paths;
 
 use crate::{MdrefError, Result};
 
@@ -178,9 +179,11 @@ pub fn resolve_parent(dir: &Path) -> Result<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_is_external_url() {

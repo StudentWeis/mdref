@@ -43,11 +43,12 @@ fn run_with_writer<W: Write>(path: String, root_dir: Option<String>, writer: &mu
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
+    use tempfile::TempDir;
+
     use super::*;
     use crate::commands::find::run_with_writer;
-    use std::fs;
-    use std::path::Path;
-    use tempfile::TempDir;
 
     #[allow(clippy::unwrap_used)]
     fn write_file(path: &Path, content: &str) {

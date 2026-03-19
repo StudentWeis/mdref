@@ -1,6 +1,7 @@
+use std::fs;
+
 use mdref::rename;
 use rstest::rstest;
-use std::fs;
 
 mod common;
 

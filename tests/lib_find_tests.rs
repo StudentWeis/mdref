@@ -1,8 +1,7 @@
+use std::{fs, io::Write, path::Path};
+
 use mdref::{MdrefError, Reference, find_links, find_references};
 use rstest::rstest;
-use std::fs;
-use std::io::Write;
-use std::path::Path;
 use tempfile::TempDir;
 
 mod common;

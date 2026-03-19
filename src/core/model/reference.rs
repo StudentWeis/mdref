@@ -1,5 +1,7 @@
-use std::fmt::{self, Display, Formatter};
-use std::path::PathBuf;
+use std::{
+    fmt::{self, Display, Formatter},
+    path::PathBuf,
+};
 
 /// The type of Markdown link that produced this reference.
 #[derive(Debug, Clone, PartialEq, Eq)]

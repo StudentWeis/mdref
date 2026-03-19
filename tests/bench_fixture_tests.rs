@@ -2,9 +2,10 @@
 #[path = "../benches/support/mod.rs"]
 mod support;
 
+use std::path::Path;
+
 use mdref::{LinkType, find_links, find_references};
 use rstest::rstest;
-use std::path::Path;
 use support::{
     BenchmarkFixture, FixtureProfile, FixtureSummary, MoveOperation, build_fixture,
     run_move_operation,

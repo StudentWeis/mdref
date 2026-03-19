@@ -1,6 +1,7 @@
+use std::hint::black_box;
+
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use mdref::{find_links, find_references};
-use std::hint::black_box;
 
 mod support;
 

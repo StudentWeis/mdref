@@ -1,9 +1,12 @@
+use std::{
+    fs,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
+};
+
 use mdref::{MdrefError, find_links, find_references, mv};
 use rstest::rstest;
-use std::fs;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::sync::{LazyLock, Mutex};
 use tempfile::TempDir;
 
 mod common;
