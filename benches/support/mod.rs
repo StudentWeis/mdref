@@ -11,6 +11,7 @@ const LINKS_PER_CONTENT_DOCUMENT: usize = 6;
 const BUNDLE_HOT_FILE_REFERENCES: usize = 3;
 const HOT_FILE_BUNDLE_REFERENCES: usize = 2;
 const BUNDLE_INTERNAL_REFERENCES: usize = 3;
+const BUNDLE_OUTBOUND_REFERENCES: usize = 3;
 const PAYLOAD_LINE: &str =
     "Benchmark payload text to keep parsing work realistic without making fixtures enormous.\n";
 
@@ -31,6 +32,7 @@ pub struct FixtureSummary {
     pub links_per_content_document: usize,
     pub hot_file_references: usize,
     pub bundle_directory_references: usize,
+    pub directory_move_rewrites: usize,
 }
 
 #[derive(Debug)]
@@ -206,6 +208,10 @@ pub fn build_fixture(profile: FixtureProfile) -> io::Result<BenchmarkFixture> {
         bundle_directory_references: (content_documents * 2)
             + HOT_FILE_BUNDLE_REFERENCES
             + BUNDLE_INTERNAL_REFERENCES,
+        directory_move_rewrites: (content_documents * 2)
+            + HOT_FILE_BUNDLE_REFERENCES
+            + BUNDLE_INTERNAL_REFERENCES
+            + BUNDLE_OUTBOUND_REFERENCES,
     };
 
     Ok(BenchmarkFixture {

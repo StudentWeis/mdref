@@ -97,7 +97,7 @@ fn benchmark_move_operations(c: &mut Criterion) {
         let directory_fixture =
             build_fixture(profile).expect("benchmark fixture generation should succeed");
         group.throughput(Throughput::Elements(
-            directory_fixture.summary.bundle_directory_references as u64,
+            directory_fixture.summary.directory_move_rewrites as u64,
         ));
         group.bench_function(BenchmarkId::new("mv_directory", profile_label), move |b| {
             // `iter_batched_ref` keeps fixture teardown outside the measured section.

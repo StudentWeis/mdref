@@ -21,6 +21,7 @@ fn test_small_profile_reports_expected_summary() {
     assert_eq!(fixture.summary.links_per_content_document, 6);
     assert_eq!(fixture.summary.hot_file_references, 27);
     assert_eq!(fixture.summary.bundle_directory_references, 29);
+    assert_eq!(fixture.summary.directory_move_rewrites, 32);
     assert!(fixture.hot_file.exists());
     assert!(fixture.hot_directory.exists());
     assert!(fixture.representative_document.exists());
@@ -41,6 +42,24 @@ fn test_fixture_reference_counts_match_summary() {
     assert_eq!(
         bundle_references.len(),
         fixture.summary.bundle_directory_references
+    );
+}
+
+#[rstest]
+#[case::small(FixtureProfile::Small, 32)]
+#[case::medium(FixtureProfile::Medium, 92)]
+#[case::large(FixtureProfile::Large, 328)]
+#[allow(clippy::unwrap_used)]
+fn test_fixture_summary_directory_move_rewrites_all_profiles_match_total_rewrites(
+    #[case] profile: FixtureProfile,
+    #[case] expected_rewrites: usize,
+) {
+    let fixture = build_fixture(profile).unwrap();
+
+    assert_eq!(fixture.summary.directory_move_rewrites, expected_rewrites);
+    assert_eq!(
+        fixture.summary.directory_move_rewrites,
+        fixture.summary.bundle_directory_references + 3
     );
 }
 
