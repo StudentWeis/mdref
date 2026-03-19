@@ -151,18 +151,6 @@ fixture 由 `benches/support/mod.rs` 统一生成，核心结构如下：
 
 ### 主要问题
 
-#### 1. `mv_*` benchmark 的计时边界不够干净
-
-当前 `move` 组虽然通过 `iter_batched` 避免了 fixture 构建成本进入计时区间，但 timed closure 中仍持有整个 `BenchmarkFixture`。由于该结构内部持有 `TempDir`，closure 结束时触发的临时目录清理可能落入计时范围。
-
-这会带来以下影响：
-
-- benchmark 结果混入文件系统删除成本
-- 样本之间的波动增大
-- 结果更容易受到目录规模和运行环境差异影响
-
-这是当前 benchmark 体系中**优先级最高的准确性问题**。
-
 #### 2. `mv_directory` throughput 的语义不够严格
 
 当前 `bundle_directory_references` 主要反映外部文档对目标目录的引用规模，但目录移动时实际需要重写的链接可能更多，包括目录内部文件对外部目标的相对链接调整。

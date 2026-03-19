@@ -1,10 +1,10 @@
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use mdref::{find_links, find_references, mv};
+use mdref::{find_links, find_references};
 use std::hint::black_box;
 
 mod support;
 
-use support::{FixtureProfile, build_fixture};
+use support::{FixtureProfile, build_fixture, run_move_operation};
 
 const FIND_PROFILES: &[FixtureProfile] = &[
     FixtureProfile::Small,
@@ -83,17 +83,12 @@ fn benchmark_move_operations(c: &mut Criterion) {
             file_fixture.summary.hot_file_references as u64,
         ));
         group.bench_function(BenchmarkId::new("mv_file", profile_label), move |b| {
-            b.iter_batched(
+            // `iter_batched_ref` keeps fixture teardown outside the measured section.
+            b.iter_batched_ref(
                 || build_fixture(profile).expect("benchmark fixture generation should succeed"),
                 |fixture| {
-                    mv(
-                        black_box(&fixture.hot_file),
-                        black_box(&fixture.move_file_destination),
-                        black_box(&fixture.root),
-                        false,
-                    )
-                    .expect("mv file benchmark should succeed");
-                    black_box(fixture);
+                    run_move_operation(fixture.file_move_operation())
+                        .expect("mv file benchmark should succeed");
                 },
                 BatchSize::LargeInput,
             );
@@ -105,17 +100,12 @@ fn benchmark_move_operations(c: &mut Criterion) {
             directory_fixture.summary.bundle_directory_references as u64,
         ));
         group.bench_function(BenchmarkId::new("mv_directory", profile_label), move |b| {
-            b.iter_batched(
+            // `iter_batched_ref` keeps fixture teardown outside the measured section.
+            b.iter_batched_ref(
                 || build_fixture(profile).expect("benchmark fixture generation should succeed"),
                 |fixture| {
-                    mv(
-                        black_box(&fixture.hot_directory),
-                        black_box(&fixture.move_directory_destination),
-                        black_box(&fixture.root),
-                        false,
-                    )
-                    .expect("mv directory benchmark should succeed");
-                    black_box(fixture);
+                    run_move_operation(fixture.directory_move_operation())
+                        .expect("mv directory benchmark should succeed");
                 },
                 BatchSize::LargeInput,
             );

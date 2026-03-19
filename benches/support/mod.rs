@@ -1,5 +1,7 @@
+use mdref::{Result, mv};
 use pathdiff::diff_paths;
 use std::fs;
+use std::hint::black_box;
 use std::io;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -44,6 +46,13 @@ pub struct BenchmarkFixture {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub struct MoveOperation<'a> {
+    pub source: &'a Path,
+    pub destination: &'a Path,
+    pub root: &'a Path,
+}
+
+#[derive(Debug, Clone, Copy)]
 struct FixtureConfig {
     label: &'static str,
     levels: usize,
@@ -82,6 +91,33 @@ impl FixtureProfile {
             },
         }
     }
+}
+
+impl BenchmarkFixture {
+    pub fn file_move_operation(&self) -> MoveOperation<'_> {
+        MoveOperation {
+            source: &self.hot_file,
+            destination: &self.move_file_destination,
+            root: &self.root,
+        }
+    }
+
+    pub fn directory_move_operation(&self) -> MoveOperation<'_> {
+        MoveOperation {
+            source: &self.hot_directory,
+            destination: &self.move_directory_destination,
+            root: &self.root,
+        }
+    }
+}
+
+pub fn run_move_operation(operation: MoveOperation<'_>) -> Result<()> {
+    mv(
+        black_box(operation.source),
+        black_box(operation.destination),
+        black_box(operation.root),
+        false,
+    )
 }
 
 pub fn build_fixture(profile: FixtureProfile) -> io::Result<BenchmarkFixture> {

@@ -3,7 +3,12 @@
 mod support;
 
 use mdref::{LinkType, find_links, find_references};
-use support::{FixtureProfile, build_fixture};
+use rstest::rstest;
+use std::path::Path;
+use support::{
+    BenchmarkFixture, FixtureProfile, FixtureSummary, MoveOperation, build_fixture,
+    run_move_operation,
+};
 
 #[test]
 #[allow(clippy::unwrap_used)]
@@ -77,5 +82,94 @@ fn test_move_destinations_are_reserved_but_missing() {
     assert_eq!(
         fixture.move_directory_destination.parent().unwrap(),
         fixture.root.join("archive")
+    );
+}
+
+fn select_file_move_operation(fixture: &BenchmarkFixture) -> MoveOperation<'_> {
+    fixture.file_move_operation()
+}
+
+fn select_directory_move_operation(fixture: &BenchmarkFixture) -> MoveOperation<'_> {
+    fixture.directory_move_operation()
+}
+
+fn file_source_path(fixture: &BenchmarkFixture) -> &Path {
+    &fixture.hot_file
+}
+
+fn file_destination_path(fixture: &BenchmarkFixture) -> &Path {
+    &fixture.move_file_destination
+}
+
+fn file_reference_count(summary: &FixtureSummary) -> usize {
+    summary.hot_file_references
+}
+
+fn directory_source_path(fixture: &BenchmarkFixture) -> &Path {
+    &fixture.hot_directory
+}
+
+fn directory_destination_path(fixture: &BenchmarkFixture) -> &Path {
+    &fixture.move_directory_destination
+}
+
+fn directory_reference_count(summary: &FixtureSummary) -> usize {
+    summary.bundle_directory_references
+}
+
+#[rstest]
+#[case::file(select_file_move_operation, file_source_path, file_destination_path)]
+#[case::directory(
+    select_directory_move_operation,
+    directory_source_path,
+    directory_destination_path
+)]
+#[allow(clippy::unwrap_used)]
+fn test_move_operation_variant_selects_expected_paths(
+    #[case] select_operation: for<'a> fn(&'a BenchmarkFixture) -> MoveOperation<'a>,
+    #[case] select_source: fn(&BenchmarkFixture) -> &Path,
+    #[case] select_destination: fn(&BenchmarkFixture) -> &Path,
+) {
+    let fixture = build_fixture(FixtureProfile::Small).unwrap();
+
+    let operation = select_operation(&fixture);
+
+    assert_eq!(operation.source, select_source(&fixture));
+    assert_eq!(operation.destination, select_destination(&fixture));
+    assert_eq!(operation.root, fixture.root.as_path());
+}
+
+#[rstest]
+#[case::file(
+    select_file_move_operation,
+    file_source_path,
+    file_destination_path,
+    file_reference_count
+)]
+#[case::directory(
+    select_directory_move_operation,
+    directory_source_path,
+    directory_destination_path,
+    directory_reference_count
+)]
+#[allow(clippy::unwrap_used)]
+fn test_move_operation_execution_updates_paths_and_references(
+    #[case] select_operation: for<'a> fn(&'a BenchmarkFixture) -> MoveOperation<'a>,
+    #[case] select_source: fn(&BenchmarkFixture) -> &Path,
+    #[case] select_destination: fn(&BenchmarkFixture) -> &Path,
+    #[case] select_reference_count: fn(&FixtureSummary) -> usize,
+) {
+    let fixture = build_fixture(FixtureProfile::Small).unwrap();
+    let expected_references = select_reference_count(&fixture.summary);
+
+    run_move_operation(select_operation(&fixture)).unwrap();
+
+    assert!(!select_source(&fixture).exists());
+    assert!(select_destination(&fixture).exists());
+    assert_eq!(
+        find_references(select_destination(&fixture), &fixture.root)
+            .unwrap()
+            .len(),
+        expected_references
     );
 }

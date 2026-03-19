@@ -20,7 +20,5 @@ cargo bench
 # Release
 
 ```sh
-git tag *.*.*
-git push --tags
-cargo publish
+cargo release
 ```
