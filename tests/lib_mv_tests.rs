@@ -1094,6 +1094,67 @@ fn test_mv_symlink_to_same_file() {
     }
 }
 
+/// A symlink reference should be treated as a real reference target and rewritten
+/// to the moved file path after the underlying file is relocated.
+#[test]
+#[cfg(unix)]
+#[allow(clippy::unwrap_used)]
+fn test_mv_symbolic_link_reference_updates_reference() {
+    use std::os::unix::fs::symlink;
+
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("docs").join("source.md");
+    write_file(&source_file, "# Source");
+
+    let symlink_path = temp_dir.path().join("aliases").join("source.md");
+    fs::create_dir_all(symlink_path.parent().unwrap()).unwrap();
+    symlink(&source_file, &symlink_path).unwrap();
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[Alias](aliases/source.md)");
+
+    let target_file = temp_dir.path().join("archive").join("source.md");
+    mv(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    )
+    .unwrap();
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(ref_content.contains("archive/source.md"));
+    assert!(!ref_content.contains("aliases/source.md"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_reference_file_with_crlf_line_endings_preserves_line_endings() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("source.md");
+    write_file(&source_file, "# Source");
+
+    let ref_file = temp_dir.path().join("index.md");
+    fs::write(&ref_file, b"# Index\r\n\r\n[Source](source.md)\r\n").unwrap();
+
+    let target_file = temp_dir.path().join("archive").join("source.md");
+    mv(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    )
+    .unwrap();
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert_eq!(
+        ref_content,
+        "# Index\r\n\r\n[Source](archive/source.md)\r\n"
+    );
+}
+
 /// Move file containing pure anchor links (#section) should preserve them unchanged.
 /// Pure anchor links are internal to the document and should not be rewritten.
 #[rstest]
@@ -1989,6 +2050,35 @@ fn test_mv_updates_link_reference_definition_in_external_file() {
         "Link usage should remain unchanged. Got: {}",
         ref_content
     );
+}
+
+/// UTF-8 BOM at file start should not prevent reference definitions from being detected.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_bom_prefixed_reference_definition_updates_reference() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let source_file = temp_dir.path().join("target.md");
+    write_file(&source_file, "# Target Content");
+
+    let ref_file = temp_dir.path().join("index.md");
+    fs::write(
+        &ref_file,
+        b"\xEF\xBB\xBF[ref]: target.md\n\nSee [the target][ref].\n",
+    )
+    .unwrap();
+
+    let target_file = temp_dir.path().join("docs").join("target.md");
+    mv(
+        source_file.to_str().unwrap(),
+        target_file.to_str().unwrap(),
+        temp_dir.path().to_str().unwrap(),
+        false,
+    )
+    .unwrap();
+
+    let ref_content = fs::read_to_string(&ref_file).unwrap();
+    assert!(ref_content.contains("[ref]: docs/target.md"));
 }
 
 /// Moving a file that is referenced via a link reference definition with a title.

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use pathdiff::diff_paths;
 use walkdir::WalkDir;
 
 use super::model::{LinkReplacement, MoveTransaction};
@@ -135,6 +136,38 @@ fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, Pa
     Ok((resolved_dest, source_canonical, dest_canonical))
 }
 
+fn resolve_case_only_destination(source: &Path, destination: &Path) -> Result<Option<PathBuf>> {
+    if !source.exists() {
+        return Ok(None);
+    }
+
+    let source_canonical = source.canonicalize().map_err(|e| {
+        MdrefError::Path(format!(
+            "Cannot canonicalize source path '{}': {}",
+            source.display(),
+            e
+        ))
+    })?;
+    let resolved_dest = resolve_destination(source, destination)?;
+    let dest_canonical = canonicalize_destination(&resolved_dest)?;
+    let same_parent = source.parent() == resolved_dest.parent();
+    let case_only_name_change = source
+        .file_name()
+        .zip(resolved_dest.file_name())
+        .map(|(source_name, dest_name)| {
+            let source_name = source_name.to_string_lossy();
+            let dest_name = dest_name.to_string_lossy();
+            source_name != dest_name && source_name.eq_ignore_ascii_case(&dest_name)
+        })
+        .unwrap_or(false);
+
+    if source_canonical == dest_canonical && same_parent && case_only_name_change {
+        Ok(Some(resolved_dest))
+    } else {
+        Ok(None)
+    }
+}
+
 // ============= Replacement planning =============
 
 /// Collect all link replacements needed for external references (other files pointing to the moved file).
@@ -148,6 +181,60 @@ fn plan_external_replacements(
     for reference in references {
         let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
         let new_link_path = relative_path(&reference.path, resolved_dest)?;
+
+        let new_link_with_anchor = match anchor {
+            Some(a) => format!("{}#{}", new_link_path.display(), a),
+            None => new_link_path.display().to_string(),
+        };
+
+        replacements_by_file
+            .entry(reference.path.clone())
+            .or_default()
+            .push(build_replacement(
+                reference,
+                &new_link_with_anchor,
+                &mut line_cache,
+            )?);
+    }
+
+    Ok(replacements_by_file)
+}
+
+fn relative_path_preserving_filename_case(from: &Path, to: &Path) -> Result<PathBuf> {
+    let from_parent = from
+        .parent()
+        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let from_resolved = if from_parent.exists() {
+        from_parent.canonicalize()?
+    } else {
+        super::util::resolve_parent(from_parent)?
+    };
+
+    let to_parent = to
+        .parent()
+        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let to_parent_resolved = if to_parent.exists() {
+        to_parent.canonicalize()?
+    } else {
+        super::util::resolve_parent(to_parent)?
+    };
+    let filename = to
+        .file_name()
+        .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+
+    Ok(diff_paths(to_parent_resolved.join(filename), from_resolved).unwrap_or_default())
+}
+
+fn plan_case_only_external_replacements(
+    references: &[Reference],
+    resolved_dest: &Path,
+) -> Result<ReplacementPlan> {
+    let mut replacements_by_file: ReplacementPlan = HashMap::new();
+    let mut line_cache = LineCache::new();
+
+    for reference in references {
+        let (_link_path_only, anchor) = split_link_and_anchor(&reference.link_text);
+        let new_link_path = relative_path_preserving_filename_case(&reference.path, resolved_dest)?;
 
         let new_link_with_anchor = match anchor {
             Some(a) => format!("{}#{}", new_link_path.display(), a),
@@ -395,6 +482,10 @@ where
 }
 
 fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Result<()> {
+    if let Some(case_only_dest) = resolve_case_only_destination(source, dest)? {
+        return mv_case_only_file(source, &case_only_dest, root, dry_run);
+    }
+
     let (resolved_dest, _source_canonical, _dest_canonical) =
         match validate_move_paths(source, dest) {
             Ok(paths) => paths,
@@ -464,6 +555,50 @@ fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Re
     transaction.mark_source_removed();
 
     Ok(())
+}
+
+fn mv_case_only_file(
+    source: &Path,
+    resolved_dest: &Path,
+    root: &Path,
+    dry_run: bool,
+) -> Result<()> {
+    let references = find_references(source, root)?;
+    let mut replacements_by_file =
+        plan_case_only_external_replacements(&references, resolved_dest)?;
+
+    if let Some(source_replacements) = replacements_by_file.remove(source) {
+        replacements_by_file
+            .entry(resolved_dest.to_path_buf())
+            .or_default()
+            .extend(source_replacements);
+    }
+
+    if dry_run {
+        print_dry_run_report(source, resolved_dest, &replacements_by_file);
+        return Ok(());
+    }
+
+    let mut transaction = MoveTransaction::new(source.to_path_buf(), resolved_dest.to_path_buf());
+    if replacements_by_file.contains_key(resolved_dest) {
+        transaction.snapshot_file(source)?;
+    }
+    for file_path in replacements_by_file
+        .keys()
+        .filter(|path| *path != resolved_dest)
+    {
+        transaction.snapshot_file(file_path)?;
+    }
+
+    fs::rename(source, resolved_dest)?;
+    transaction.mark_renamed();
+
+    execute_with_rollback(&transaction, || {
+        for (file_path, replacements) in &replacements_by_file {
+            apply_replacements(file_path, replacements)?;
+        }
+        Ok(())
+    })
 }
 
 fn mv_directory(source_dir: &Path, new_path: &Path, root: &Path, dry_run: bool) -> Result<()> {
@@ -693,9 +828,63 @@ fn get_cached_line<'a>(
     Ok(lines[line_number - 1].as_str())
 }
 
+#[derive(Clone, Copy)]
+enum LineEnding {
+    None,
+    Lf,
+    CrLf,
+}
+
+impl LineEnding {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::Lf => "\n",
+            Self::CrLf => "\r\n",
+        }
+    }
+}
+
+fn split_lines_preserving_endings(content: &str) -> Vec<(String, LineEnding)> {
+    let mut lines = Vec::new();
+    let mut start = 0;
+    let bytes = content.as_bytes();
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'\n' {
+            let is_crlf = index > 0 && bytes[index - 1] == b'\r';
+            let line_end = if is_crlf { index - 1 } else { index };
+            let line = content[start..line_end].to_string();
+            let ending = if is_crlf {
+                LineEnding::CrLf
+            } else {
+                LineEnding::Lf
+            };
+            lines.push((line, ending));
+            start = index + 1;
+        }
+        index += 1;
+    }
+
+    if start < content.len() {
+        lines.push((content[start..].to_string(), LineEnding::None));
+    }
+
+    lines
+}
+
+fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
+    match line.strip_prefix('\u{feff}') {
+        Some(stripped) => (stripped, '\u{feff}'.len_utf8()),
+        None => (line, 0),
+    }
+}
+
 fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
-    let trimmed = line.trim_start();
-    let leading_spaces = line.len() - trimmed.len();
+    let (line_without_bom, bom_offset) = strip_utf8_bom_prefix(line);
+    let trimmed = line_without_bom.trim_start();
+    let leading_spaces = line_without_bom.len() - trimmed.len();
     if leading_spaces > 3 || !trimmed.starts_with('[') {
         return None;
     }
@@ -705,7 +894,7 @@ fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
         return None;
     }
 
-    let after_colon_start = leading_spaces + label_end + 2;
+    let after_colon_start = bom_offset + leading_spaces + label_end + 2;
     let after_colon = &line[after_colon_start..];
     let trimmed_after_colon = after_colon.trim_start();
     if trimmed_after_colon.is_empty() {
@@ -733,7 +922,7 @@ fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
 /// earlier replacements do not shift the positions of later ones.
 fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Result<()> {
     let content = fs::read_to_string(file_path)?;
-    let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+    let mut lines = split_lines_preserving_endings(&content);
 
     // Sort replacements in reverse order (bottom-right to top-left) so that
     // replacing one link does not invalidate the positions of subsequent ones.
@@ -756,7 +945,7 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
             )));
         }
 
-        let line = &lines[replacement.line - 1];
+        let line = &lines[replacement.line - 1].0;
         let col = replacement.column.saturating_sub(1); // Convert to 0-based index
 
         // Search for the old_pattern starting from the column position.
@@ -770,7 +959,7 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
                 replacement.new_pattern,
                 &line[end_pos..]
             );
-            lines[replacement.line - 1] = new_line;
+            lines[replacement.line - 1].0 = new_line;
         } else {
             return Err(MdrefError::Path(format!(
                 "Could not find link '{}' in line {} of file {}",
@@ -781,11 +970,10 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
         }
     }
 
-    // Reconstruct the content, preserving the original trailing newline if present.
-    let mut new_content = lines.join("\n");
-    if content.ends_with('\n') {
-        new_content.push('\n');
-    }
+    let new_content = lines
+        .into_iter()
+        .map(|(line, ending)| format!("{line}{}", ending.as_str()))
+        .collect::<String>();
     fs::write(file_path, new_content)?;
 
     Ok(())
@@ -852,6 +1040,30 @@ mod tests {
         assert!(content.contains("# Title"));
         assert!(content.contains("Some text [Link](new.md) more text."));
         assert!(content.contains("Another paragraph."));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_apply_replacements_crlf_input_preserves_crlf_line_endings() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("doc.md");
+        write_file(
+            file_path.to_str().unwrap(),
+            "# Title\r\n\r\nSee [Link](old.md)\r\n",
+        );
+
+        let replacements = vec![LinkReplacement {
+            line: 3,
+            column: 5,
+            old_pattern: "](old.md)".to_string(),
+            new_pattern: "](new.md)".to_string(),
+        }];
+
+        apply_replacements(&file_path, &replacements).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "# Title\r\n\r\nSee [Link](new.md)\r\n");
+        assert!(!content.contains('\n') || content.contains("\r\n"));
     }
 
     #[test]

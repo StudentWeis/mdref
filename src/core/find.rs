@@ -18,18 +18,27 @@ where
     B: AsRef<Path>,
 {
     let canonical_path = path.as_ref().canonicalize()?;
-    Ok(WalkDir::new(root_dir)
+    let markdown_files: Vec<PathBuf> = WalkDir::new(root_dir)
         .into_iter()
-        .par_bridge()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-        .filter_map(move |entry| {
-            fs::read_to_string(entry.path())
-                .ok()
-                .map(|content| process_md_file(&content, entry.path(), Some(&canonical_path)))
+        .map(|entry| entry.into_path())
+        .collect();
+
+    let results: Vec<Result<Vec<Reference>>> = markdown_files
+        .par_iter()
+        .map(|path| {
+            let content = fs::read_to_string(path)?;
+            Ok(process_md_file(&content, path, Some(&canonical_path)))
         })
-        .flatten()
-        .collect())
+        .collect();
+
+    let mut references = Vec::new();
+    for result in results {
+        references.extend(result?);
+    }
+
+    Ok(references)
 }
 
 /// Process a single Markdown file to find any file links.
@@ -101,6 +110,8 @@ fn parse_link_reference_definitions(
             continue;
         }
 
+        let (line, bom_offset) = strip_utf8_bom_prefix(line);
+
         // Link reference definitions may have up to 3 leading spaces.
         let trimmed = line.trim_start();
         let leading_spaces = line.len() - trimmed.len();
@@ -152,11 +163,18 @@ fn parse_link_reference_definitions(
         }
 
         // Column is 1-based, pointing to the `[` character
-        let column = leading_spaces + 1;
+        let column = bom_offset + leading_spaces + 1;
         definitions.push((line_number, url, column));
     }
 
     definitions
+}
+
+fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
+    match line.strip_prefix('\u{feff}') {
+        Some(stripped) => (stripped, '\u{feff}'.len_utf8()),
+        None => (line, 0),
+    }
 }
 
 fn collect_ignored_reference_definition_lines<'a>(root: &'a AstNode<'a>) -> HashSet<usize> {

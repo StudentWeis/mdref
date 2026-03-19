@@ -1,5 +1,6 @@
 use mdref::rename;
 use rstest::rstest;
+use std::fs;
 
 mod common;
 
@@ -7,6 +8,13 @@ use common::{
     fixture_multi_file_reference, fixture_single_file_reference, fixture_unicode_paths, read_file,
     temp_dir, write_file,
 };
+
+#[allow(clippy::unwrap_used)]
+fn is_case_insensitive_filesystem(root: &std::path::Path) -> bool {
+    let mixed_case = root.join("CaseProbe.md");
+    fs::write(&mixed_case, "# probe").unwrap();
+    root.join("CASEPROBE.md").exists()
+}
 
 // Library tests for `rename` cover the rename semantics and reference updates.
 // CLI tests avoid duplicating these cases unless process behavior must be verified.
@@ -134,6 +142,40 @@ fn test_rename_in_subdirectory() {
     let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("sub/shallow.md"));
     assert!(!ref_content.contains("sub/deep.md"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_rename_case_only_name_on_case_insensitive_filesystem_updates_file_and_references() {
+    let temp_dir = temp_dir();
+    if !is_case_insensitive_filesystem(temp_dir.path()) {
+        return;
+    }
+
+    let source = temp_dir.path().join("Readme.md");
+    write_file(&source, "[Self](Readme.md)");
+
+    let ref_file = temp_dir.path().join("index.md");
+    write_file(&ref_file, "[Guide](Readme.md)");
+
+    rename(&source, "README.md", temp_dir.path(), false).unwrap();
+
+    let renamed = temp_dir.path().join("README.md");
+    assert!(renamed.exists());
+    let file_names: Vec<String> = fs::read_dir(temp_dir.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    assert!(file_names.iter().any(|name| name == "README.md"));
+    assert!(!file_names.iter().any(|name| name == "Readme.md"));
+
+    let renamed_content = read_file(&renamed);
+    assert!(renamed_content.contains("README.md"));
+    assert!(!renamed_content.contains("Readme.md"));
+
+    let ref_content = read_file(&ref_file);
+    assert!(ref_content.contains("README.md"));
+    assert!(!ref_content.contains("Readme.md"));
 }
 
 // ============= Error cases =============

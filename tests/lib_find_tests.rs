@@ -26,6 +26,24 @@ fn test_find_links_returns_error_for_nonexistent_file() {
     }
 }
 
+/// find_links should fail fast for invalid UTF-8 markdown input.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_links_invalid_utf8_input_returns_invalid_data_error() {
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().join("invalid.md");
+    fs::write(&path, b"# Invalid\xFF\n").unwrap();
+
+    let result = find_links(&path);
+
+    match result {
+        Err(MdrefError::Io(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        }
+        other => panic!("expected invalid data error for invalid utf-8, got {other:?}"),
+    }
+}
+
 /// find_links should return an empty Vec for non-markdown files.
 #[test]
 fn test_find_links_returns_empty_for_non_markdown_file() {
@@ -266,6 +284,28 @@ fn test_find_references_returns_error_for_nonexistent_file() {
             assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         }
         other => panic!("expected io error for nonexistent file, got {other:?}"),
+    }
+}
+
+/// find_references should return an error instead of silently skipping invalid UTF-8 markdown files.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_invalid_utf8_file_returns_invalid_data_error() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    let invalid_ref = temp_dir.path().join("invalid.md");
+    fs::write(&invalid_ref, b"[Broken](target.md)\xFF").unwrap();
+
+    let result = find_references(&target, temp_dir.path());
+
+    match result {
+        Err(MdrefError::Io(error)) => {
+            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        }
+        other => panic!("expected invalid data error for invalid utf-8, got {other:?}"),
     }
 }
 
