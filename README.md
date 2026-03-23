@@ -60,7 +60,6 @@ Links in ./examples/main.md:
 
 - clap
 - walkdir
-- pathdiff
 - rayon
 - comrak
 - cargo-dist

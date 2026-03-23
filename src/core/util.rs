@@ -25,23 +25,44 @@ pub fn strip_utf8_bom_prefix(line: &str) -> (&str, usize) {
 /// - `"file.md#section"` -> `"file.md#section"` (anchor preserved)
 pub fn url_decode_link(link: &str) -> String {
     let mut result = String::with_capacity(link.len());
-    let chars: Vec<char> = link.chars().collect();
+    let bytes = link.as_bytes();
     let mut i = 0;
 
-    while i < chars.len() {
-        if chars[i] == '%' && i + 2 < chars.len() {
-            // Try to parse the next two characters as hex digits
-            let hex = &link[i + 1..i + 3];
-            if let Ok(byte) = u8::from_str_radix(hex, 16) {
-                // Valid hex encoding, decode it
-                result.push(byte as char);
-                i += 3;
-                continue;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            // Collect consecutive %XX sequences into a byte buffer
+            let mut decoded_bytes = Vec::new();
+            while i < bytes.len() && bytes[i] == b'%' && i + 2 < bytes.len() {
+                let hex = &link[i + 1..i + 3];
+                match u8::from_str_radix(hex, 16) {
+                    Ok(byte) => {
+                        decoded_bytes.push(byte);
+                        i += 3;
+                    }
+                    Err(_) => break,
+                }
             }
+
+            if decoded_bytes.is_empty() {
+                // Invalid %XX sequence, push '%' as-is and advance
+                result.push('%');
+                i += 1;
+            } else {
+                match String::from_utf8(decoded_bytes) {
+                    Ok(decoded) => result.push_str(&decoded),
+                    Err(err) => {
+                        result.push_str(&String::from_utf8_lossy(err.as_bytes()));
+                    }
+                }
+            }
+        } else {
+            // Non-encoded byte: find the full UTF-8 character starting at this position
+            // and push it as a whole char to preserve multibyte Unicode characters
+            let remaining = &link[i..];
+            let ch = remaining.chars().next().unwrap_or('\0');
+            result.push(ch);
+            i += ch.len_utf8();
         }
-        // Not a valid encoding, just push the character as-is
-        result.push(chars[i]);
-        i += 1;
     }
 
     result
@@ -190,6 +211,7 @@ pub fn resolve_parent(dir: &Path) -> Result<PathBuf> {
 mod tests {
     use std::fs;
 
+    use rstest::rstest;
     use tempfile::TempDir;
 
     use super::*;
@@ -445,5 +467,19 @@ mod tests {
     fn test_url_decode_link_percent_sign() {
         // %25 is encoded percent sign
         assert_eq!(url_decode_link("100%25.md"), "100%.md");
+    }
+
+    #[rstest]
+    #[case::chinese_single("%E4%B8%AD.md", "中.md")]
+    #[case::chinese_filename("%E4%B8%AD%E6%96%87%E6%96%87%E6%A1%A3.md", "中文文档.md")]
+    #[case::japanese("docs/%E6%97%A5%E6%9C%AC%E8%AA%9E.md", "docs/日本語.md")]
+    #[case::emoji("%F0%9F%93%9D.md", "📝.md")]
+    #[case::mixed_ascii_and_chinese("file_%E4%B8%AD.md", "file_中.md")]
+    #[case::space_and_chinese("my%20%E6%96%87%E4%BB%B6.md", "my 文件.md")]
+    fn test_url_decode_link_multibyte_utf8_decodes_correctly(
+        #[case] input: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(url_decode_link(input), expected);
     }
 }
