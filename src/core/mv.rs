@@ -4,14 +4,16 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use pathdiff::diff_paths;
 use walkdir::WalkDir;
 
 use super::{
     model::{LinkReplacement, MoveTransaction},
     util::{is_external_url, relative_path, strip_utf8_bom_prefix, url_decode_link},
 };
-use crate::{LinkType, MdrefError, Reference, Result, find_links, find_references};
+use crate::{
+    LinkType, MdrefError, Reference, Result, core::pathdiff::diff_paths, find_links,
+    find_references,
+};
 
 type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
 type SnapshotPaths = Vec<PathBuf>;

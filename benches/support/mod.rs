@@ -5,8 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use mdref::{Result, mv};
-use pathdiff::diff_paths;
+use mdref::{Result, diff_paths, mv};
 use tempfile::TempDir;
 
 const FIXED_MARKDOWN_FILES: usize = 4;

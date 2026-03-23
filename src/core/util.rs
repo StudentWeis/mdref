@@ -1,8 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use pathdiff::diff_paths;
-
-use crate::{MdrefError, Result};
+use crate::{MdrefError, Result, core::pathdiff::diff_paths};
 
 /// Strip the UTF-8 BOM (Byte Order Mark) prefix from a line.
 ///
