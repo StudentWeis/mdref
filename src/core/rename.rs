@@ -43,22 +43,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Write};
+    use std::fs;
 
     use tempfile::TempDir;
 
     use super::*;
-    use crate::MdrefError;
-
-    #[allow(clippy::unwrap_used)]
-    fn write_file(path: &Path, content: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).ok();
-        }
-
-        let mut file = fs::File::create(path).unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-    }
+    use crate::{MdrefError, test_utils::write_file};
 
     #[test]
     #[allow(clippy::unwrap_used)]

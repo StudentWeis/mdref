@@ -23,20 +23,10 @@ fn run_with_writer<W: Write>(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::Path};
-
+    use mdref::test_utils::write_file;
     use tempfile::TempDir;
 
     use super::*;
-
-    #[allow(clippy::unwrap_used)]
-    fn write_file(path: &Path, content: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).ok();
-        }
-        let mut file = fs::File::create(path).unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-    }
 
     #[test]
     #[allow(clippy::unwrap_used)]

@@ -1,6 +1,9 @@
 pub mod core;
 mod error;
 
+#[doc(hidden)]
+pub mod test_utils;
+
 pub use core::{
     find::{find_links, find_references},
     model::{LinkType, Reference},

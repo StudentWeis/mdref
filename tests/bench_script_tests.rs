@@ -11,7 +11,7 @@ use tempfile::TempDir;
 
 #[allow(clippy::unwrap_used)]
 fn bench_script_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("script/bench.sh")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts/bench.sh")
 }
 
 #[allow(clippy::unwrap_used)]

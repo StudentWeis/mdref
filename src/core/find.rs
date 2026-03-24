@@ -382,20 +382,10 @@ fn resolve_link(base_path: &Path, link_path: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, io::Write};
-
     use tempfile::TempDir;
 
     use super::*;
-
-    #[allow(clippy::unwrap_used)]
-    fn write_file(path: &Path, content: &str) {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).ok();
-        }
-        let mut file = fs::File::create(path).unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-    }
+    use crate::test_utils::write_file;
 
     // ============= resolve_link tests =============
 

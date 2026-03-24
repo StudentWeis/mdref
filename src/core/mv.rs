@@ -980,20 +980,10 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
-
     use tempfile::TempDir;
 
     use super::*;
-
-    #[allow(clippy::unwrap_used)]
-    fn write_file(path: &str, content: &str) {
-        if let Some(parent) = Path::new(path).parent() {
-            fs::create_dir_all(parent).ok();
-        }
-        let mut file = fs::File::create(path).unwrap();
-        file.write_all(content.as_bytes()).unwrap();
-    }
+    use crate::test_utils::write_file;
 
     // ============= apply_replacements tests =============
 

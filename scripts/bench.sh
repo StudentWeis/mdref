@@ -17,14 +17,14 @@ case "$mode" in
     ;;
   save-baseline)
     if [[ -z "$baseline" ]]; then
-      echo "usage: script/bench.sh save-baseline <name>" >&2
+      echo "usage: scripts/bench.sh save-baseline <name>" >&2
       exit 1
     fi
     run_bench --noplot --save-baseline "$baseline"
     ;;
   compare)
     if [[ -z "$baseline" ]]; then
-      echo "usage: script/bench.sh compare <name>" >&2
+      echo "usage: scripts/bench.sh compare <name>" >&2
       exit 1
     fi
     run_bench --noplot --baseline "$baseline"
@@ -33,7 +33,7 @@ case "$mode" in
     run_bench --list
     ;;
   *)
-    echo "usage: script/bench.sh [quick|full|save-baseline <name>|compare <name>|list]" >&2
+    echo "usage: scripts/bench.sh [quick|full|save-baseline <name>|compare <name>|list]" >&2
     exit 1
     ;;
 esac
