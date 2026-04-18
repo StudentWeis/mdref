@@ -9,15 +9,15 @@ readme = "README.md"
 license = "MIT"
 
 [dependencies]
-clap = { version = "4.6.0", features = ["derive"] }
-walkdir = "2.3"
-comrak = "0.51"
-rayon = "1.11.0"
+clap = { version = "4.6.1", features = ["derive"] }
+walkdir = "2.5.0"
+comrak = "0.52.0"
+rayon = "1.12.0"
 thiserror = "2.0.18"
 
 [dev-dependencies]
 criterion = "0.8.2"
-tempfile = "3.19"
+tempfile = "3.27.0"
 rstest = "0.26.1"
 
 # The profile that 'dist' will build with

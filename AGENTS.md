@@ -1,21 +1,12 @@
-## Total
+## General Principles
 
-- Think in terms of first principles.
-- Write code following the principles of Clean Code.
-- Follow the TDD (Test-Driven Development) approach, prioritizing writing tests that fail first, then writing implementation code that passes.
+- Reason from first principles — question assumptions before adopting patterns.
+- Follow Clean Code, DRY, and KISS — favor clarity over cleverness.
+- Don't over-abstract and keep it simple.
+- Practice TDD: write a failing test first, then implement the minimal code to make it pass, then refactor.
 
 ## Development
 
-- Use thiserror to define error types.
-- Use scripts/precheck.sh to check code quality and format.
-
-## Tests
-
-- Use tempfile to create temporary files.
-- Use rstest to perform parameterized tests.
-- Use appropriate macros to avoid clippy warnings in test functions.
-- Test functions should follow the `test_<object>_<scenario>_<expected>` naming pattern.
-
-## Others
-
-- Use the [rtk](./RTK.md) prefix when executing Shell commands.
+- Define all error types with `thiserror` — avoid manual `impl Display/Error`.
+- Run `scripts/precheck.sh` before committing to verify code quality and formatting.
+- Follow the guidelines in [Testing](./doc/TESTING.md) for test structure, naming, and coverage expectations.

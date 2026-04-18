@@ -8,6 +8,8 @@ if [ -z "$1" ]; then
 	exit 1
 fi
 
+bash scripts/before_update.sh
+
 NEW_VERSION=$1
 CARGO_TOML="Cargo.toml"
 
