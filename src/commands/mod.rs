@@ -1,9 +1,15 @@
-use clap::Subcommand;
+use clap::{Subcommand, ValueEnum};
 use mdref::Result;
 
 mod find;
 mod mv;
 mod rename;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum OutputFormat {
+    Human,
+    Json,
+}
 
 #[derive(Subcommand)]
 pub enum Commands {
@@ -14,6 +20,9 @@ pub enum Commands {
         /// Root directory to search in (default: current directory)
         #[arg(short, long)]
         root: Option<String>,
+        /// Output format
+        #[arg(long, value_enum, default_value_t = OutputFormat::Human)]
+        format: OutputFormat,
     },
     /// Rename a file and update references
     Rename {
@@ -43,12 +52,37 @@ pub enum Commands {
     },
 }
 
+impl Commands {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Find { .. } => "find",
+            Self::Rename { .. } => "rename",
+            Self::Mv { .. } => "mv",
+        }
+    }
+
+    pub fn output_format(&self) -> OutputFormat {
+        match self {
+            Self::Find { format, .. } => *format,
+            Self::Rename { .. } | Self::Mv { .. } => OutputFormat::Human,
+        }
+    }
+
+    pub fn target(&self) -> Option<&str> {
+        match self {
+            Self::Find { path, .. } => Some(path.as_str()),
+            Self::Rename { .. } | Self::Mv { .. } => None,
+        }
+    }
+}
+
 pub fn handle_command(command: Commands, progress: bool) -> Result<()> {
     match command {
         Commands::Find {
             path: filepath,
             root,
-        } => find::run(filepath, root, progress),
+            format,
+        } => find::run(filepath, root, progress, format),
         Commands::Rename {
             old,
             new,

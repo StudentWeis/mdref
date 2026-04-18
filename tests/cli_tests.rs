@@ -1,6 +1,7 @@
 mod common;
 
 use common::{read_file, run_cli, temp_dir, write_file};
+use serde_json::Value;
 
 // CLI tests only cover process-level contracts: argument wiring, exit codes,
 // stdout/stderr output, and one representative end-to-end flow per command.
@@ -36,6 +37,58 @@ fn test_cli_find_no_references() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("No references found"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_find_json_format_outputs_machine_readable_payload() {
+    let temp_dir = temp_dir();
+    let target = temp_dir.path().join("target.md");
+    let reference = temp_dir.path().join("index.md");
+    write_file(&target, "[Guide](guide.md)");
+    write_file(&reference, "See [target](target.md)");
+
+    let output = run_cli(&[
+        "find",
+        target.to_str().unwrap(),
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["operation"], "find");
+    assert_eq!(payload["target"], target.to_str().unwrap());
+    assert_eq!(payload["references"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["links"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_find_json_format_outputs_machine_readable_error() {
+    let temp_dir = temp_dir();
+    let missing = temp_dir.path().join("missing.md");
+
+    let output = run_cli(&[
+        "find",
+        missing.to_str().unwrap(),
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["operation"], "find");
+    assert_eq!(payload["target"], missing.to_str().unwrap());
+    assert!(payload["error"].as_str().unwrap().contains("IO error"));
 }
 
 // ============= mv command tests =============

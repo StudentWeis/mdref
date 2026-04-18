@@ -58,19 +58,11 @@ follow_symlinks = false
 format = "human"
 ```
 
-### 2. 缺少进度反馈机制
-
-**问题**：大规模目录扫描时无进度指示，移动操作无进度条显示。
-
-**改进建议**：
-- 添加 `--progress` 标志显示进度条
-- 使用 `indicatif` crate 实现进度显示
-
 ### 3. 命令层输出格式单一
 
-**问题**：仅支持人类可读格式，无 JSON/机器可读输出，不便于集成到 CI/CD。
+**当前状态**：`find` 命令已支持 `--format json`，可输出机器可读结果，并在失败时返回 JSON 错误对象，便于集成到 CI/CD。
 
-**改进建议**：添加 `--format json` 选项：
+**后续建议**：将相同的输出格式抽象扩展到 `mv` 和 `rename`，统一 dry-run 与正式执行的机器可读输出协议：
 
 ```json
 {
@@ -86,32 +78,3 @@ format = "human"
   ]
 }
 ```
-
-### 4. 缺少日志系统
-
-**问题**：无 `--verbose` 或 `--debug` 模式，排查问题困难。
-
-**改进建议**：集成 `tracing` 或 `log` crate，支持多级别日志：
-
-```rust
-use tracing::{info, debug, warn};
-
-debug!("Processing file: {}", path.display());
-info!("Found {} references", refs.len());
-warn!("Skipping unsupported link: {}", link);
-```
-
----
-
-## 测试与文档
-
-### 文档待完善
-
-**问题**：
-- 缺少 API 文档（`cargo doc` 生成）
-- 缺少使用示例和最佳实践
-
-**改进建议**：
-- 为所有公开 API 添加文档注释
-- 创建 `doc/Usage.md` 详细使用指南
-- 创建 `doc/API.md` 库接口说明

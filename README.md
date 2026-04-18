@@ -58,14 +58,31 @@ Links in ./examples/main.md:
 ./examples/main.md:9:59 - inner/sub/other.md
 ```
 
-# Acknowledge
+For CI/CD or other automation, use JSON output:
 
-- clap
-- ignore
-- walkdir
-- rayon
-- comrak
-- cargo-dist
+```sh
+$ mdref find ./examples/main.md --format json
+{
+	"operation": "find",
+	"target": "./examples/main.md",
+	"references": [
+		{
+			"path": "./examples/other.md",
+			"line": 7,
+			"column": 1,
+			"link_text": "main.md"
+		}
+	],
+	"links": [
+		{
+			"path": "./examples/main.md",
+			"line": 7,
+			"column": 1,
+			"link_text": "main.md"
+		}
+	]
+}
+```
 
 # Contributing
 
