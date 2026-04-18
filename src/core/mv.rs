@@ -22,6 +22,12 @@ type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
 type SnapshotPaths = Vec<PathBuf>;
 type LineCache = HashMap<PathBuf, Vec<String>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegularFileMoveMethod {
+    Renamed,
+    CopyAndDelete,
+}
+
 // LinkReplacement and MoveTransaction are now defined in the model module
 
 /// Execute a fallible closure within a transaction context.
@@ -446,6 +452,73 @@ fn plan_directory_replacements(
     Ok((replacements_by_file, snapshot_paths.into_iter().collect()))
 }
 
+fn try_rename_regular_file(source: &Path, dest: &Path) -> std::io::Result<RegularFileMoveMethod> {
+    try_rename_regular_file_with(source, dest, |from, to| fs::rename(from, to))
+}
+
+fn try_rename_regular_file_with<F>(
+    source: &Path,
+    dest: &Path,
+    rename: F,
+) -> std::io::Result<RegularFileMoveMethod>
+where
+    F: FnOnce(&Path, &Path) -> std::io::Result<()>,
+{
+    match rename(source, dest) {
+        Ok(()) => Ok(RegularFileMoveMethod::Renamed),
+        Err(error) if error.kind() == std::io::ErrorKind::CrossesDevices => {
+            Ok(RegularFileMoveMethod::CopyAndDelete)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn extend_unique_replacements(
+    destination_replacements: &mut Vec<LinkReplacement>,
+    replacements: Vec<LinkReplacement>,
+) {
+    for replacement in replacements {
+        let already_present = destination_replacements.iter().any(|existing| {
+            existing.line == replacement.line
+                && existing.column == replacement.column
+                && existing.old_pattern == replacement.old_pattern
+                && existing.new_pattern == replacement.new_pattern
+        });
+
+        if !already_present {
+            destination_replacements.push(replacement);
+        }
+    }
+}
+
+fn move_source_replacements_to_destination(
+    replacements_by_file: &mut ReplacementPlan,
+    source: &Path,
+    destination: &Path,
+) {
+    if let Some(source_replacements) = replacements_by_file.remove(source) {
+        let destination_replacements = replacements_by_file
+            .entry(destination.to_path_buf())
+            .or_default();
+        extend_unique_replacements(destination_replacements, source_replacements);
+    }
+}
+
+fn add_destination_replacements(
+    replacements_by_file: &mut ReplacementPlan,
+    destination: &Path,
+    replacements: Vec<LinkReplacement>,
+) {
+    if replacements.is_empty() {
+        return;
+    }
+
+    let destination_replacements = replacements_by_file
+        .entry(destination.to_path_buf())
+        .or_default();
+    extend_unique_replacements(destination_replacements, replacements);
+}
+
 // ============= Public API =============
 
 /// Move a Markdown file or directory and atomically update all references across the project.
@@ -499,15 +572,15 @@ fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Re
     // Phase 1: Plan — pure computation, no side effects.
     let references = find_references(source, root)?;
     let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
+    replacements_by_file.remove(source);
+    let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
 
     if dry_run {
-        let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
-        if !internal_replacements.is_empty() {
-            replacements_by_file
-                .entry(resolved_dest.clone())
-                .or_default()
-                .extend(internal_replacements);
-        }
+        add_destination_replacements(
+            &mut replacements_by_file,
+            &resolved_dest,
+            internal_replacements,
+        );
         print_dry_run_report(source, &resolved_dest, &replacements_by_file);
         return Ok(());
     }
@@ -520,24 +593,38 @@ fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Re
         transaction.snapshot_file(file_path)?;
     }
 
+    if !internal_replacements.is_empty() && !replacements_by_file.contains_key(source) {
+        transaction.snapshot_file(source)?;
+    }
+
     // Ensure the parent directory of the destination exists.
     if let Some(parent) = resolved_dest.parent() {
         fs::create_dir_all(parent)?;
     }
 
-    // Copy source to destination.
-    fs::copy(source, &resolved_dest)?;
-    transaction.mark_copied();
+    let move_method = try_rename_regular_file(source, &resolved_dest)?;
+    match move_method {
+        RegularFileMoveMethod::Renamed => {
+            transaction.mark_renamed();
+            add_destination_replacements(
+                &mut replacements_by_file,
+                &resolved_dest,
+                internal_replacements,
+            );
+        }
+        RegularFileMoveMethod::CopyAndDelete => {
+            fs::copy(source, &resolved_dest)?;
+            transaction.mark_copied();
 
-    // Compute internal link replacements from the newly copied file.
-    let internal_replacements = plan_internal_replacements(&resolved_dest, source, &resolved_dest)?;
-    if !internal_replacements.is_empty() {
-        // Snapshot the destination file (the copy) before modifying it.
-        transaction.snapshot_file(&resolved_dest)?;
-        replacements_by_file
-            .entry(resolved_dest.clone())
-            .or_default()
-            .extend(internal_replacements);
+            if !internal_replacements.is_empty() {
+                transaction.snapshot_file(&resolved_dest)?;
+                add_destination_replacements(
+                    &mut replacements_by_file,
+                    &resolved_dest,
+                    internal_replacements,
+                );
+            }
+        }
     }
 
     // Apply all replacements within a rollback-protected context.
@@ -548,9 +635,21 @@ fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Re
         Ok(())
     })?;
 
-    // Remove the original file.
-    fs::remove_file(source)?;
-    transaction.mark_source_removed();
+    if move_method == RegularFileMoveMethod::CopyAndDelete {
+        if let Err(original_error) = fs::remove_file(source) {
+            let rollback_errors = transaction.rollback();
+            return if rollback_errors.is_empty() {
+                Err(original_error.into())
+            } else {
+                Err(MdrefError::RollbackFailed {
+                    original_error: original_error.to_string(),
+                    rollback_errors,
+                })
+            };
+        }
+
+        transaction.mark_source_removed();
+    }
 
     Ok(())
 }
@@ -564,13 +663,7 @@ fn mv_case_only_file(
     let references = find_references(source, root)?;
     let mut replacements_by_file =
         plan_case_only_external_replacements(&references, resolved_dest)?;
-
-    if let Some(source_replacements) = replacements_by_file.remove(source) {
-        replacements_by_file
-            .entry(resolved_dest.to_path_buf())
-            .or_default()
-            .extend(source_replacements);
-    }
+    move_source_replacements_to_destination(&mut replacements_by_file, source, resolved_dest);
 
     if dry_run {
         print_dry_run_report(source, resolved_dest, &replacements_by_file);
@@ -1394,5 +1487,41 @@ mod tests {
             }
             other => panic!("expected rollback failed error, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_try_rename_regular_file_with_requests_copy_fallback_for_cross_device_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let destination = temp_dir.path().join("dest.md");
+        write_file(source.to_str().unwrap(), "# Source");
+
+        let result = try_rename_regular_file_with(&source, &destination, |_, _| {
+            Err(std::io::Error::from(std::io::ErrorKind::CrossesDevices))
+        })
+        .unwrap();
+
+        assert_eq!(result, RegularFileMoveMethod::CopyAndDelete);
+        assert!(source.exists());
+        assert!(!destination.exists());
+    }
+
+    #[test]
+    fn test_try_rename_regular_file_with_propagates_non_cross_device_error() {
+        let temp_dir = TempDir::new().unwrap();
+        let source = temp_dir.path().join("source.md");
+        let destination = temp_dir.path().join("dest.md");
+        write_file(source.to_str().unwrap(), "# Source");
+
+        let result = try_rename_regular_file_with(&source, &destination, |_, _| {
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        });
+
+        assert!(matches!(
+            result,
+            Err(error) if error.kind() == std::io::ErrorKind::PermissionDenied
+        ));
+        assert!(source.exists());
+        assert!(!destination.exists());
     }
 }

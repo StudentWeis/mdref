@@ -76,7 +76,7 @@ fn process_md_file(
     let mut results = Vec::new();
     collect_links(root, file_path, target_canonical, content, &mut results);
 
-    // Step 4: Add reference definitions as References.
+    // Step 3: Add reference definitions as References.
     for (line_number, url, column) in &ref_defs {
         if process_link(file_path, target_canonical, url) {
             results.push(Reference::with_link_type(
