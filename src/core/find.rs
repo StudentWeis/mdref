@@ -9,6 +9,7 @@ use comrak::{
     nodes::{AstNode, NodeValue},
     parse_document,
 };
+use indicatif::ProgressBar;
 use rayon::prelude::*;
 
 use super::util::{
@@ -23,14 +24,38 @@ where
     P: AsRef<Path>,
     B: AsRef<Path>,
 {
+    find_references_with_progress(path, root_dir, None)
+}
+
+/// Find all references with an optional progress bar.
+///
+/// When a `ProgressBar` is provided, it is incremented once for each Markdown file scanned.
+/// The caller is responsible for creating and finishing the progress bar.
+pub fn find_references_with_progress<P, B>(
+    path: P,
+    root_dir: B,
+    progress: Option<&ProgressBar>,
+) -> Result<Vec<Reference>>
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+{
     let canonical_path = path.as_ref().canonicalize()?;
     let markdown_files = collect_markdown_files(root_dir.as_ref());
+
+    if let Some(progress_bar) = progress {
+        progress_bar.set_length(markdown_files.len() as u64);
+    }
 
     let results: Vec<Result<Vec<Reference>>> = markdown_files
         .par_iter()
         .map(|path| {
             let content = fs::read_to_string(path)?;
-            Ok(process_md_file(&content, path, Some(&canonical_path)))
+            let refs = process_md_file(&content, path, Some(&canonical_path));
+            if let Some(progress_bar) = progress {
+                progress_bar.inc(1);
+            }
+            Ok(refs)
         })
         .collect();
 

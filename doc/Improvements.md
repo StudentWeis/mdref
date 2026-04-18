@@ -2,23 +2,6 @@
 
 本文档记录 `mdref` 项目当前的缺陷、改进点及优先级建议。
 
-
-### P2: 同文件系统移动未优先使用 `fs::rename`
-
-**文件**：`src/core/mv.rs` — `mv_regular_file()`
-
-**问题**：当前使用 `fs::copy` + `fs::remove_file` 实现文件移动。对于同一文件系统内的移动，`fs::rename` 是原子操作且更高效。copy-then-delete 方式在大文件场景下性能差，且在 copy 成功但 delete 失败时会留下重复文件。
-
-**修复方向**：优先尝试 `fs::rename`，失败时（跨文件系统）再 fallback 到 copy + delete。
-
-### P3: `process_md_file` 注释步骤编号跳跃
-
-**文件**：`src/core/find.rs` — `process_md_file()`
-
-**问题**：注释中步骤编号从 Step 1 → Step 2 → Step 4，缺少 Step 3，疑似重构后遗留。
-
----
-
 ## 代码质量问题
 
 ### 错误处理粒度不够

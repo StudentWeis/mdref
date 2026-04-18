@@ -1,19 +1,40 @@
 use std::io::Write;
 
-use mdref::{Result, find_links, find_references};
+use indicatif::{ProgressBar, ProgressStyle};
+use mdref::{Result, find_links, find_references_with_progress};
 
-pub fn run(path: String, root_dir: Option<String>) -> Result<()> {
+pub fn run(path: String, root_dir: Option<String>, show_progress: bool) -> Result<()> {
     let mut stdout = std::io::stdout();
-    run_with_writer(path, root_dir, &mut stdout)
+    run_with_writer(path, root_dir, show_progress, &mut stdout)
 }
 
-fn run_with_writer<W: Write>(path: String, root_dir: Option<String>, writer: &mut W) -> Result<()> {
+fn run_with_writer<W: Write>(
+    path: String,
+    root_dir: Option<String>,
+    show_progress: bool,
+    writer: &mut W,
+) -> Result<()> {
     let root_path = root_dir.unwrap_or_else(|| ".".to_string());
 
     writeln!(writer, "-------------------------------")?;
 
     // Find references to the specified file.
-    let references = find_references(&path, &root_path)?;
+    let progress = if show_progress {
+        let progress_bar = ProgressBar::new_spinner();
+        progress_bar.set_style(
+            ProgressStyle::with_template("{spinner:.green} [{pos}/{len}] {msg}")
+                .expect("valid template"),
+        );
+        Some(progress_bar)
+    } else {
+        None
+    };
+
+    let references = find_references_with_progress(&path, &root_path, progress.as_ref())?;
+
+    if let Some(progress_bar) = &progress {
+        progress_bar.finish_and_clear();
+    }
     if references.is_empty() {
         writeln!(writer, "No references found for {path}")?;
     } else {
@@ -62,6 +83,7 @@ mod tests {
         run_with_writer(
             target.to_str().unwrap().to_string(),
             Some(root.to_str().unwrap().to_string()),
+            false,
             &mut output,
         )
         .unwrap();
@@ -85,6 +107,7 @@ mod tests {
         run_with_writer(
             target.to_str().unwrap().to_string(),
             Some(root.to_str().unwrap().to_string()),
+            false,
             &mut output,
         )
         .unwrap();
@@ -98,8 +121,13 @@ mod tests {
     #[allow(clippy::unwrap_used)]
     fn test_find_command_propagates_library_errors() {
         let mut output = Vec::new();
-        let error = run_with_writer("missing.md".to_string(), Some(".".to_string()), &mut output)
-            .unwrap_err();
+        let error = run_with_writer(
+            "missing.md".to_string(),
+            Some(".".to_string()),
+            false,
+            &mut output,
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("Path error") || error.to_string().contains("IO error"));
     }

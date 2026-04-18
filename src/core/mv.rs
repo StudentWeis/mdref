@@ -4,19 +4,18 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use indicatif::ProgressBar;
 use walkdir::WalkDir;
 
 use super::{
+    find::find_references_with_progress,
     model::{LinkReplacement, MoveTransaction},
     util::{
         collect_markdown_files, is_external_url, relative_path, strip_utf8_bom_prefix,
         url_decode_link,
     },
 };
-use crate::{
-    LinkType, MdrefError, Reference, Result, core::pathdiff::diff_paths, find_links,
-    find_references,
-};
+use crate::{LinkType, MdrefError, Reference, Result, core::pathdiff::diff_paths, find_links};
 
 type ReplacementPlan = HashMap<PathBuf, Vec<LinkReplacement>>;
 type SnapshotPaths = Vec<PathBuf>;
@@ -388,6 +387,7 @@ fn plan_directory_replacements(
     source_canonical: &Path,
     dest_canonical: &Path,
     root: &Path,
+    progress: Option<&ProgressBar>,
 ) -> Result<(ReplacementPlan, SnapshotPaths)> {
     let path_mappings =
         build_directory_path_mappings(source_dir, source_canonical, dest_canonical)?;
@@ -395,7 +395,10 @@ fn plan_directory_replacements(
     let mut snapshot_paths: HashSet<PathBuf> = HashSet::new();
     let mut line_cache = LineCache::new();
 
-    for reference in find_references(source_dir, root)? {
+    if let Some(progress_bar) = progress {
+        progress_bar.set_message("Scanning references...");
+    }
+    for reference in find_references_with_progress(source_dir, root, progress)? {
         let (link_path_only, _) = split_link_and_anchor(&reference.link_text);
         let Some(old_target) = resolve_reference_target(&reference.path, link_path_only) else {
             continue;
@@ -541,20 +544,46 @@ where
     B: AsRef<Path>,
     D: AsRef<Path>,
 {
+    mv_with_progress(source, dest, root, dry_run, None)
+}
+
+/// Move a Markdown file or directory and atomically update all references,
+/// with an optional progress bar for visual feedback.
+///
+/// When a `ProgressBar` is provided, it is used to display scanning and update progress.
+/// The caller is responsible for creating and finishing the progress bar.
+pub fn mv_with_progress<P, B, D>(
+    source: P,
+    dest: B,
+    root: D,
+    dry_run: bool,
+    progress: Option<&ProgressBar>,
+) -> Result<()>
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+    D: AsRef<Path>,
+{
     let source = source.as_ref();
     let dest = dest.as_ref();
     let root = root.as_ref();
 
     if source.is_dir() {
-        return mv_directory(source, dest, root, dry_run);
+        return mv_directory(source, dest, root, dry_run, progress);
     }
 
-    mv_regular_file(source, dest, root, dry_run)
+    mv_regular_file(source, dest, root, dry_run, progress)
 }
 
-fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Result<()> {
+fn mv_regular_file(
+    source: &Path,
+    dest: &Path,
+    root: &Path,
+    dry_run: bool,
+    progress: Option<&ProgressBar>,
+) -> Result<()> {
     if let Some(case_only_dest) = resolve_case_only_destination(source, dest)? {
-        return mv_case_only_file(source, &case_only_dest, root, dry_run);
+        return mv_case_only_file(source, &case_only_dest, root, dry_run, progress);
     }
 
     let (resolved_dest, _source_canonical, _dest_canonical) =
@@ -570,7 +599,10 @@ fn mv_regular_file(source: &Path, dest: &Path, root: &Path, dry_run: bool) -> Re
         };
 
     // Phase 1: Plan — pure computation, no side effects.
-    let references = find_references(source, root)?;
+    if let Some(progress_bar) = progress {
+        progress_bar.set_message("Scanning references...");
+    }
+    let references = find_references_with_progress(source, root, progress)?;
     let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
     replacements_by_file.remove(source);
     let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
@@ -659,8 +691,12 @@ fn mv_case_only_file(
     resolved_dest: &Path,
     root: &Path,
     dry_run: bool,
+    progress: Option<&ProgressBar>,
 ) -> Result<()> {
-    let references = find_references(source, root)?;
+    if let Some(progress_bar) = progress {
+        progress_bar.set_message("Scanning references...");
+    }
+    let references = find_references_with_progress(source, root, progress)?;
     let mut replacements_by_file =
         plan_case_only_external_replacements(&references, resolved_dest)?;
     move_source_replacements_to_destination(&mut replacements_by_file, source, resolved_dest);
@@ -692,7 +728,13 @@ fn mv_case_only_file(
     })
 }
 
-fn mv_directory(source_dir: &Path, new_path: &Path, root: &Path, dry_run: bool) -> Result<()> {
+fn mv_directory(
+    source_dir: &Path,
+    new_path: &Path,
+    root: &Path,
+    dry_run: bool,
+    progress: Option<&ProgressBar>,
+) -> Result<()> {
     let (resolved_dest, source_canonical, dest_canonical) =
         match validate_move_paths(source_dir, new_path) {
             Ok(paths) => paths,
@@ -704,8 +746,13 @@ fn mv_directory(source_dir: &Path, new_path: &Path, root: &Path, dry_run: bool) 
             }
         };
 
-    let (replacements_by_file, snapshot_paths) =
-        plan_directory_replacements(source_dir, &source_canonical, &dest_canonical, root)?;
+    let (replacements_by_file, snapshot_paths) = plan_directory_replacements(
+        source_dir,
+        &source_canonical,
+        &dest_canonical,
+        root,
+        progress,
+    )?;
 
     if dry_run {
         print_dry_run_report(source_dir, &resolved_dest, &replacements_by_file);

@@ -1,6 +1,8 @@
 use std::path::Path;
 
-use crate::{Result, mv};
+use indicatif::ProgressBar;
+
+use crate::{Result, core::mv::mv_with_progress, mv};
 
 /// Rename a file by changing only its filename while keeping it in the same directory.
 /// This is a convenience wrapper around `mv` that handles the common case of
@@ -35,10 +37,33 @@ where
     let name = name.as_ref();
     let root = root.as_ref();
 
-    // Compute the new path by replacing only the filename
     let new_path = source.with_file_name(name);
 
     mv(source, new_path, root, dry_run)
+}
+
+/// Rename a file with an optional progress bar for visual feedback.
+///
+/// This is a convenience wrapper around `mv_with_progress`.
+pub fn rename_with_progress<P, B, D>(
+    source: P,
+    name: B,
+    root: D,
+    dry_run: bool,
+    progress: Option<&ProgressBar>,
+) -> Result<()>
+where
+    P: AsRef<Path>,
+    B: AsRef<str>,
+    D: AsRef<Path>,
+{
+    let source = source.as_ref();
+    let name = name.as_ref();
+    let root = root.as_ref();
+
+    let new_path = source.with_file_name(name);
+
+    mv_with_progress(source, new_path, root, dry_run, progress)
 }
 
 #[cfg(test)]

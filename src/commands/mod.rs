@@ -43,23 +43,23 @@ pub enum Commands {
     },
 }
 
-pub fn handle_command(command: Commands) -> Result<()> {
+pub fn handle_command(command: Commands, progress: bool) -> Result<()> {
     match command {
         Commands::Find {
             path: filepath,
             root,
-        } => find::run(filepath, root),
+        } => find::run(filepath, root, progress),
         Commands::Rename {
             old,
             new,
             root,
             dry_run,
-        } => rename::run(old, new, root, dry_run),
+        } => rename::run(old, new, root, dry_run, progress),
         Commands::Mv {
             source,
             dest,
             root,
             dry_run,
-        } => mv::run(source, dest, root, dry_run),
+        } => mv::run(source, dest, root, dry_run, progress),
     }
 }

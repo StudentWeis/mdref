@@ -1,10 +1,17 @@
 use std::io::Write;
 
-use mdref::{Result, rename};
+use indicatif::{ProgressBar, ProgressStyle};
+use mdref::{Result, rename_with_progress};
 
-pub fn run(old: String, new: String, root: Option<String>, dry_run: bool) -> Result<()> {
+pub fn run(
+    old: String,
+    new: String,
+    root: Option<String>,
+    dry_run: bool,
+    show_progress: bool,
+) -> Result<()> {
     let mut stdout = std::io::stdout();
-    run_with_writer(old, new, root, dry_run, &mut stdout)
+    run_with_writer(old, new, root, dry_run, show_progress, &mut stdout)
 }
 
 fn run_with_writer<W: Write>(
@@ -12,13 +19,32 @@ fn run_with_writer<W: Write>(
     new: String,
     root: Option<String>,
     dry_run: bool,
+    show_progress: bool,
     writer: &mut W,
 ) -> Result<()> {
     let root_path = root.unwrap_or_else(|| ".".to_string());
     if !dry_run {
         writeln!(writer, "Rename {old} -> {new} in {root_path}")?;
     }
-    rename(&old, &new, &root_path, dry_run)
+
+    let progress = if show_progress && !dry_run {
+        let progress_bar = ProgressBar::new_spinner();
+        progress_bar.set_style(
+            ProgressStyle::with_template("{spinner:.green} [{pos}/{len}] {msg}")
+                .expect("valid template"),
+        );
+        Some(progress_bar)
+    } else {
+        None
+    };
+
+    let result = rename_with_progress(&old, &new, &root_path, dry_run, progress.as_ref());
+
+    if let Some(progress_bar) = &progress {
+        progress_bar.finish_and_clear();
+    }
+
+    result
 }
 
 #[cfg(test)]
@@ -41,6 +67,7 @@ mod tests {
             source.to_str().unwrap().to_string(),
             "new.md".to_string(),
             Some(root.to_str().unwrap().to_string()),
+            false,
             false,
             &mut output,
         )
@@ -68,6 +95,7 @@ mod tests {
             "published.md".to_string(),
             Some(root.to_str().unwrap().to_string()),
             true,
+            false,
             &mut output,
         )
         .unwrap();
@@ -88,6 +116,7 @@ mod tests {
             root.join("missing.md").to_str().unwrap().to_string(),
             "new.md".to_string(),
             Some(root.to_str().unwrap().to_string()),
+            false,
             false,
             &mut output,
         )
