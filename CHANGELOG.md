@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.3] - 2026-04-18
+
+### <!-- 0 -->🚀 Features
+- Add gitignore support for directory scanning by @StudentWeis
+
+### <!-- 2 -->🚜 Refactor
+- Enhance file moving logic with error handling by @StudentWeis
+- Remove obsolete files and update dependencies; enhance pre-commit scripts and testing guidelines by @StudentWeis
+- Deduplicate write_file test helper into shared test_utils module by @StudentWeis
+- Remove pathdiff dependency and enhance url_decode_link function with multibyte UTF-8 support by @StudentWeis
+- Remove pathdiff dependency and implement diff_paths function by @StudentWeis
+
+### <!-- 7 -->⚙️ Miscellaneous Tasks
+- Enhance release process with new scripts and hooks by @StudentWeis
+
 ## [0.4.2] - 2026-03-19
 
 ### 🚀 Features
