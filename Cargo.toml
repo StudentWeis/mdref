@@ -32,3 +32,11 @@ harness = false
 
 [package.metadata.release]
 tag-name = "{{version}}"
+pre-release-commit-message = "chore(release): release {{crate_name}} {{version}}"
+pre-release-hook = ["bash", "scripts/release_prepare.sh"]
+
+[[package.metadata.release.pre-release-replacements]]
+file = "README.md"
+search = 'releases/download/[^/]+'
+replace = "releases/download/{{tag_name}}"
+min = 2

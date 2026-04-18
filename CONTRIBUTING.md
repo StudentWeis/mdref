@@ -20,5 +20,10 @@ cargo bench
 # Release
 
 ```sh
-cargo release
+./scripts/update_version.sh patch
+./scripts/update_version.sh 0.5.0 --execute
 ```
+
+The wrapper delegates to `cargo release`. README installer links are updated via
+`cargo release` replacements, and changelog generation plus release checks run in
+the pre-release hook.

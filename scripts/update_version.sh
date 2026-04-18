@@ -1,58 +1,60 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Check if a version argument is provided
-if [ -z "$1" ]; then
-	echo "Usage: $0 <new_version>"
-	echo "Example: $0 0.1.2"
+usage() {
+	cat <<'EOF'
+Usage: scripts/update_version.sh <level|version> [cargo-release args...]
+
+Examples:
+  scripts/update_version.sh patch
+  scripts/update_version.sh 0.5.0 --execute
+  scripts/update_version.sh rc --execute --no-confirm
+
+This wrapper delegates to cargo release.
+Dry-run mode is the default and automatically adds --no-verify to avoid
+leaving Cargo.lock behind in repositories that do not track lockfiles.
+EOF
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+if [ "$#" -eq 0 ]; then
+	usage >&2
 	exit 1
 fi
 
-bash scripts/before_update.sh
+case "$1" in
+-h | --help)
+	usage
+	exit 0
+	;;
+esac
 
-NEW_VERSION=$1
-CARGO_TOML="Cargo.toml"
+cd "$REPO_ROOT"
 
-# Check if Cargo.toml exists
-if [ ! -f "$CARGO_TOML" ]; then
-	echo "Error: $CARGO_TOML file not found"
-	exit 1
-fi
+release_args=("$@")
+execute_requested=false
+no_verify_requested=false
 
-echo "Updating version to: $NEW_VERSION ..."
-
-# Use perl for replacement because it is more reliable in handling multiline patterns and cross-platform (macOS/Linux) than sed
-# Replace version under [package]
-perl -i -0777 -pe "s/(\[package\]\n(?:.*\n)*?version\s*=\s*\").*?\"/\${1}$NEW_VERSION\"/m" "$CARGO_TOML"
-
-# Update version in README.md installation links
-README_MD="README.md"
-if [ -f "$README_MD" ]; then
-	echo "Updating version in $README_MD ..."
-	perl -i -pe "s|releases/download/[0-9]+\.[0-9]+\.[0-9]+|releases/download/$NEW_VERSION|g" "$README_MD"
-fi
-
-# Update CHANGELOG.md using git cliff
-git cliff --unreleased --tag $NEW_VERSION --prepend CHANGELOG.md
-
-dist plan
-
-# Confirm before running cargo release --execute
-while true; do
-	read -r -p "Run 'cargo release --execute'? [Y/n] " REPLY
-	REPLY=${REPLY:-Y}
-	case "$REPLY" in
-	[Yy]*)
-		echo "Running cargo release --execute..."
-		cargo release --execute
-		break
+for arg in "${release_args[@]}"; do
+	case "$arg" in
+	-x | --execute)
+		execute_requested=true
 		;;
-	[Nn]*)
-		echo "Release aborted by user."
-		exit 0
+	--no-verify)
+		no_verify_requested=true
 		;;
-	*) echo "Please answer Y or n." ;;
 	esac
 done
 
-echo "Update completed!"
+if [ "$execute_requested" = false ] && [ "$no_verify_requested" = false ]; then
+	release_args+=("--no-verify")
+fi
+
+if [ "$execute_requested" = false ]; then
+	echo "Running cargo release dry-run (release preparation hook will skip mutations)."
+fi
+
+echo "Running: cargo release ${release_args[*]}"
+exec cargo release "${release_args[@]}"
