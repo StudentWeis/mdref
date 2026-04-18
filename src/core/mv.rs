@@ -8,7 +8,10 @@ use walkdir::WalkDir;
 
 use super::{
     model::{LinkReplacement, MoveTransaction},
-    util::{is_external_url, relative_path, strip_utf8_bom_prefix, url_decode_link},
+    util::{
+        collect_markdown_files, is_external_url, relative_path, strip_utf8_bom_prefix,
+        url_decode_link,
+    },
 };
 use crate::{
     LinkType, MdrefError, Reference, Result, core::pathdiff::diff_paths, find_links,
@@ -314,17 +317,6 @@ fn build_directory_path_mappings(
     }
 
     Ok(mappings)
-}
-
-fn collect_markdown_files(source_dir: &Path) -> Vec<PathBuf> {
-    WalkDir::new(source_dir)
-        .sort_by_file_name()
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.file_type().is_file())
-        .map(|entry| entry.into_path())
-        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("md"))
-        .collect()
 }
 
 fn resolve_reference_target(base_file: &Path, link_path_only: &str) -> Option<PathBuf> {

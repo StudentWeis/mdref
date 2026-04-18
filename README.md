@@ -35,6 +35,8 @@ mdref-update
 - mv 🔥：Move file and update markdown references.
 - rename 🔄：Rename file and update markdown references.
 
+Commands that need directory scanning respect standard ignore rules such as `.gitignore`, so ignored Markdown files under directories like `.git`, `node_modules`, and `target` are skipped during reference discovery and rewrite planning.
+
 ```sh
 $ mdref find ./examples/main.md
 
@@ -59,6 +61,7 @@ Links in ./examples/main.md:
 # Acknowledge
 
 - clap
+- ignore
 - walkdir
 - rayon
 - comrak

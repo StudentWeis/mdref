@@ -598,6 +598,29 @@ fn test_mv_directory_preserves_internal_links_within_directory() {
 }
 
 #[test]
+fn test_mv_directory_skips_gitignored_markdown_rewrites() {
+    let temp_dir = TempDir::new().unwrap();
+
+    write_file(temp_dir.path().join(".gitignore"), "docs/ignored/\n");
+
+    let source_dir = temp_dir.path().join("docs");
+    let ignored_markdown = source_dir.join("ignored").join("secret.md");
+    let outside_file = temp_dir.path().join("shared").join("faq.md");
+
+    write_file(source_dir.join("guide.md"), "# Guide");
+    write_file(&ignored_markdown, "[FAQ](../../shared/faq.md)");
+    write_file(&outside_file, "# FAQ");
+
+    let destination = temp_dir.path().join("archive").join("docs");
+    mv(&source_dir, &destination, temp_dir.path(), false).unwrap();
+
+    let ignored_content =
+        fs::read_to_string(destination.join("ignored").join("secret.md")).unwrap();
+    assert!(ignored_content.contains("../../shared/faq.md"));
+    assert!(!ignored_content.contains("../../../shared/faq.md"));
+}
+
+#[test]
 fn test_mv_directory_into_existing_directory_preserves_source_name() {
     let temp_dir = TempDir::new().unwrap();
 

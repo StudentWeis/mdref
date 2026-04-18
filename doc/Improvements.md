@@ -2,13 +2,6 @@
 
 本文档记录 `mdref` 项目当前的缺陷、改进点及优先级建议。
 
-### P1: 缺少 `.gitignore` 感知
-
-**文件**：`src/core/find.rs` — `find_references()`、`src/core/mv.rs` — `collect_markdown_files()`
-
-**问题**：`walkdir` 会遍历 `.git`、`node_modules`、`target` 等目录中的 `.md` 文件。在大型项目中既浪费性能，也可能产生误匹配。
-
-**修复方向**：使用 `ignore` crate（ripgrep 使用的同一个库）替代 `walkdir`，自动尊重 `.gitignore` 规则。
 
 ### P2: 同文件系统移动未优先使用 `fs::rename`
 

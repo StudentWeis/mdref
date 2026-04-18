@@ -381,6 +381,29 @@ fn test_find_references_finds_nested_references() {
     );
 }
 
+/// find_references should skip markdown files ignored by .gitignore.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_respects_gitignore() {
+    let temp_dir = TempDir::new().unwrap();
+
+    write_file(temp_dir.path().join(".gitignore"), "ignored/\n");
+
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    let visible_ref = temp_dir.path().join("ref.md");
+    write_file(&visible_ref, "[Visible](target.md)");
+
+    let ignored_ref = temp_dir.path().join("ignored").join("ref.md");
+    write_file(&ignored_ref, "[Ignored](../target.md)");
+
+    let result = find_references(&target, temp_dir.path()).unwrap();
+
+    assert_eq!(result.len(), 1, "Ignored markdown files should be skipped");
+    assert_eq!(result[0].path, visible_ref);
+}
+
 /// find_references should handle target as a directory.
 #[test]
 #[allow(clippy::unwrap_used)]

@@ -10,9 +10,10 @@ use comrak::{
     parse_document,
 };
 use rayon::prelude::*;
-use walkdir::WalkDir;
 
-use super::util::{is_external_url, strip_anchor, strip_utf8_bom_prefix, url_decode_link};
+use super::util::{
+    collect_markdown_files, is_external_url, strip_anchor, strip_utf8_bom_prefix, url_decode_link,
+};
 use crate::{Reference, Result};
 
 /// Find all references to a given file within Markdown files in the specified root directory.
@@ -23,12 +24,7 @@ where
     B: AsRef<Path>,
 {
     let canonical_path = path.as_ref().canonicalize()?;
-    let markdown_files: Vec<PathBuf> = WalkDir::new(root_dir)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("md"))
-        .map(|entry| entry.into_path())
-        .collect();
+    let markdown_files = collect_markdown_files(root_dir.as_ref());
 
     let results: Vec<Result<Vec<Reference>>> = markdown_files
         .par_iter()
