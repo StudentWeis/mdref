@@ -153,7 +153,7 @@ fn test_cli_mv_json_format_outputs_machine_readable_error() {
         payload["error"]
             .as_str()
             .unwrap()
-            .contains("Source path does not exist")
+            .contains("source path does not exist")
     );
 }
 
@@ -217,7 +217,7 @@ fn test_cli_rename_json_format_outputs_machine_readable_error() {
         payload["error"]
             .as_str()
             .unwrap()
-            .contains("Source path does not exist")
+            .contains("source path does not exist")
     );
 }
 

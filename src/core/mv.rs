@@ -56,9 +56,12 @@ where
 /// Resolve the destination path, handling the case where the destination is an existing directory.
 fn resolve_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
     if destination.is_dir() {
-        let filename = source.file_name().ok_or_else(|| {
-            MdrefError::Path(format!("Source path has no filename: {}", source.display()))
-        })?;
+        let filename = source
+            .file_name()
+            .ok_or_else(|| MdrefError::PathValidation {
+                path: source.to_path_buf(),
+                details: "source path has no filename".to_string(),
+            })?;
         Ok(destination.join(filename))
     } else {
         Ok(destination.to_path_buf())
@@ -68,40 +71,38 @@ fn resolve_destination(source: &Path, destination: &Path) -> Result<PathBuf> {
 /// Canonicalize a destination path, handling the case where it doesn't exist yet.
 fn canonicalize_destination(destination: &Path) -> Result<PathBuf> {
     if destination.exists() {
-        return destination.canonicalize().map_err(|e| {
-            MdrefError::Path(format!(
-                "Cannot canonicalize destination path '{}': {}",
-                destination.display(),
-                e
-            ))
-        });
+        return destination
+            .canonicalize()
+            .map_err(|e| MdrefError::PathValidation {
+                path: destination.to_path_buf(),
+                details: format!("cannot canonicalize destination path: {e}"),
+            });
     }
 
-    let parent = destination.parent().ok_or_else(|| {
-        MdrefError::Path(format!(
-            "Destination path has no parent directory: {}",
-            destination.display()
-        ))
-    })?;
+    let parent = destination
+        .parent()
+        .ok_or_else(|| MdrefError::PathValidation {
+            path: destination.to_path_buf(),
+            details: "destination path has no parent directory".to_string(),
+        })?;
 
     let parent_canonical = if parent.exists() {
-        parent.canonicalize().map_err(|e| {
-            MdrefError::Path(format!(
-                "Cannot canonicalize parent directory '{}': {}",
-                parent.display(),
-                e
-            ))
-        })?
+        parent
+            .canonicalize()
+            .map_err(|e| MdrefError::PathValidation {
+                path: parent.to_path_buf(),
+                details: format!("cannot canonicalize parent directory: {e}"),
+            })?
     } else {
         parent.to_path_buf()
     };
 
-    let filename = destination.file_name().ok_or_else(|| {
-        MdrefError::Path(format!(
-            "Destination path has no filename: {}",
-            destination.display()
-        ))
-    })?;
+    let filename = destination
+        .file_name()
+        .ok_or_else(|| MdrefError::PathValidation {
+            path: destination.to_path_buf(),
+            details: "destination path has no filename".to_string(),
+        })?;
 
     Ok(parent_canonical.join(filename))
 }
@@ -110,41 +111,41 @@ fn canonicalize_destination(destination: &Path) -> Result<PathBuf> {
 /// Returns `(resolved_dest, source_canonical, dest_canonical)`.
 fn validate_move_paths(source: &Path, destination: &Path) -> Result<(PathBuf, PathBuf, PathBuf)> {
     if !source.exists() {
-        return Err(MdrefError::Path(format!(
-            "Source path does not exist: {}",
-            source.display()
-        )));
+        return Err(MdrefError::PathValidation {
+            path: source.to_path_buf(),
+            details: "source path does not exist".to_string(),
+        });
     }
 
-    let source_canonical = source.canonicalize().map_err(|e| {
-        MdrefError::Path(format!(
-            "Cannot canonicalize source path '{}': {}",
-            source.display(),
-            e
-        ))
-    })?;
+    let source_canonical = source
+        .canonicalize()
+        .map_err(|e| MdrefError::PathValidation {
+            path: source.to_path_buf(),
+            details: format!("cannot canonicalize source path: {e}"),
+        })?;
 
     let resolved_dest = resolve_destination(source, destination)?;
     let dest_canonical = canonicalize_destination(&resolved_dest)?;
 
     if source_canonical == dest_canonical {
-        return Err(MdrefError::Path(
-            "Source and destination resolve to the same file".to_string(),
-        ));
+        return Err(MdrefError::PathValidation {
+            path: source.to_path_buf(),
+            details: "source and destination resolve to the same file".to_string(),
+        });
     }
 
     if resolved_dest.exists() {
-        return Err(MdrefError::Path(format!(
-            "Destination path already exists: {}",
-            resolved_dest.display()
-        )));
+        return Err(MdrefError::PathValidation {
+            path: resolved_dest.clone(),
+            details: "destination path already exists".to_string(),
+        });
     }
 
     if source_canonical.is_dir() && dest_canonical.starts_with(&source_canonical) {
-        return Err(MdrefError::Path(format!(
-            "Cannot move directory '{}' into itself or one of its subdirectories",
-            source.display()
-        )));
+        return Err(MdrefError::PathValidation {
+            path: source.to_path_buf(),
+            details: "cannot move directory into itself or one of its subdirectories".to_string(),
+        });
     }
 
     Ok((resolved_dest, source_canonical, dest_canonical))
@@ -155,13 +156,12 @@ fn resolve_case_only_destination(source: &Path, destination: &Path) -> Result<Op
         return Ok(None);
     }
 
-    let source_canonical = source.canonicalize().map_err(|e| {
-        MdrefError::Path(format!(
-            "Cannot canonicalize source path '{}': {}",
-            source.display(),
-            e
-        ))
-    })?;
+    let source_canonical = source
+        .canonicalize()
+        .map_err(|e| MdrefError::PathValidation {
+            path: source.to_path_buf(),
+            details: format!("cannot canonicalize source path: {e}"),
+        })?;
     let resolved_dest = resolve_destination(source, destination)?;
     let dest_canonical = canonicalize_destination(&resolved_dest)?;
     let same_parent = source.parent() == resolved_dest.parent();
@@ -215,26 +215,29 @@ fn plan_external_replacements(
 }
 
 fn relative_path_preserving_filename_case(from: &Path, to: &Path) -> Result<PathBuf> {
-    let from_parent = from
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let from_parent = from.parent().ok_or_else(|| MdrefError::PathValidation {
+        path: from.to_path_buf(),
+        details: "no parent directory".to_string(),
+    })?;
     let from_resolved = if from_parent.exists() {
         from_parent.canonicalize()?
     } else {
         super::util::resolve_parent(from_parent)?
     };
 
-    let to_parent = to
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let to_parent = to.parent().ok_or_else(|| MdrefError::PathValidation {
+        path: to.to_path_buf(),
+        details: "no parent directory".to_string(),
+    })?;
     let to_parent_resolved = if to_parent.exists() {
         to_parent.canonicalize()?
     } else {
         super::util::resolve_parent(to_parent)?
     };
-    let filename = to
-        .file_name()
-        .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+    let filename = to.file_name().ok_or_else(|| MdrefError::PathValidation {
+        path: to.to_path_buf(),
+        details: "no file name".to_string(),
+    })?;
 
     Ok(diff_paths(to_parent_resolved.join(filename), from_resolved).unwrap_or_default())
 }
@@ -303,21 +306,24 @@ fn build_directory_path_mappings(
         .filter_map(|entry| entry.ok())
         .skip(1)
     {
-        let relative = entry.path().strip_prefix(source_dir).map_err(|e| {
-            MdrefError::Path(format!(
-                "Cannot compute relative path for '{}' under '{}': {}",
-                entry.path().display(),
-                source_dir.display(),
-                e
-            ))
-        })?;
-        let old_path = entry.path().canonicalize().map_err(|e| {
-            MdrefError::Path(format!(
-                "Cannot canonicalize directory entry '{}': {}",
-                entry.path().display(),
-                e
-            ))
-        })?;
+        let relative =
+            entry
+                .path()
+                .strip_prefix(source_dir)
+                .map_err(|e| MdrefError::PathValidation {
+                    path: entry.path().to_path_buf(),
+                    details: format!(
+                        "cannot compute relative path under '{}': {e}",
+                        source_dir.display()
+                    ),
+                })?;
+        let old_path = entry
+            .path()
+            .canonicalize()
+            .map_err(|e| MdrefError::PathValidation {
+                path: entry.path().to_path_buf(),
+                details: format!("cannot canonicalize directory entry: {e}"),
+            })?;
         mappings.insert(old_path, dest_canonical.join(relative));
     }
 
@@ -345,21 +351,21 @@ fn remap_existing_path(
     source_canonical: &Path,
     path_mappings: &HashMap<PathBuf, PathBuf>,
 ) -> Result<PathBuf> {
-    let canonical = path.canonicalize().map_err(|e| {
-        MdrefError::Path(format!(
-            "Cannot canonicalize path '{}': {}",
-            path.display(),
-            e
-        ))
-    })?;
+    let canonical = path
+        .canonicalize()
+        .map_err(|e| MdrefError::PathValidation {
+            path: path.to_path_buf(),
+            details: format!("cannot canonicalize path: {e}"),
+        })?;
 
     if canonical.starts_with(source_canonical) {
-        path_mappings.get(&canonical).cloned().ok_or_else(|| {
-            MdrefError::Path(format!(
-                "Cannot map moved path '{}' to its destination",
-                path.display()
-            ))
-        })
+        path_mappings
+            .get(&canonical)
+            .cloned()
+            .ok_or_else(|| MdrefError::PathValidation {
+                path: path.to_path_buf(),
+                details: "cannot map moved path to its destination".to_string(),
+            })
     } else {
         Ok(path.to_path_buf())
     }
@@ -1020,7 +1026,10 @@ fn build_link_replacement(
 
     let parent = raw_filepath
         .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+        .ok_or_else(|| MdrefError::PathValidation {
+            path: raw_filepath.to_path_buf(),
+            details: "no parent directory".to_string(),
+        })?;
 
     // Resolve the link path; skip broken links that cannot be canonicalized.
     let current_link_absolute_path = match parent.join(link_path_only).canonicalize() {
@@ -1032,7 +1041,10 @@ fn build_link_replacement(
     } else {
         let parent = new_filepath
             .parent()
-            .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+            .ok_or_else(|| MdrefError::PathValidation {
+                path: new_filepath.to_path_buf(),
+                details: "no parent directory".to_string(),
+            })?;
         let parent_canonical = if parent.exists() {
             parent.canonicalize()?
         } else {
@@ -1040,17 +1052,21 @@ fn build_link_replacement(
         };
         let filename = new_filepath
             .file_name()
-            .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+            .ok_or_else(|| MdrefError::PathValidation {
+                path: new_filepath.to_path_buf(),
+                details: "no file name".to_string(),
+            })?;
         parent_canonical.join(filename)
     };
     let raw_file_canonical = raw_filepath.canonicalize()?;
 
     let new_link_path = if current_link_absolute_path == raw_file_canonical {
-        PathBuf::from(
-            new_file_absolute_path
-                .file_name()
-                .ok_or_else(|| MdrefError::Path("No file name".to_string()))?,
-        )
+        PathBuf::from(new_file_absolute_path.file_name().ok_or_else(|| {
+            MdrefError::PathValidation {
+                path: new_file_absolute_path.clone(),
+                details: "no file name".to_string(),
+            }
+        })?)
     } else {
         relative_path(&new_file_absolute_path, &current_link_absolute_path)?
     };
@@ -1092,13 +1108,14 @@ fn build_reference_definition_replacement(
     line_cache: &mut LineCache,
 ) -> Result<LinkReplacement> {
     let line = get_cached_line(&reference.path, reference.line, line_cache)?;
-    let (url_start, url_end) = find_reference_definition_url_span(line).ok_or_else(|| {
-        MdrefError::Path(format!(
-            "Could not parse reference definition in line {} of file {}",
-            reference.line,
-            reference.path.display()
-        ))
-    })?;
+    let (url_start, url_end) =
+        find_reference_definition_url_span(line).ok_or_else(|| MdrefError::PathValidation {
+            path: reference.path.clone(),
+            details: format!(
+                "could not parse reference definition in line {}",
+                reference.line
+            ),
+        })?;
 
     Ok(LinkReplacement {
         line: reference.line,
@@ -1116,17 +1133,20 @@ fn get_cached_line<'a>(
     let lines = match line_cache.entry(path.to_path_buf()) {
         std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
         std::collections::hash_map::Entry::Vacant(entry) => {
-            let content = fs::read_to_string(path)?;
+            let content = fs::read_to_string(path).map_err(|e| MdrefError::IoRead {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
             entry.insert(content.lines().map(|line| line.to_string()).collect())
         }
     };
 
     if line_number == 0 || line_number > lines.len() {
-        return Err(MdrefError::InvalidLine(format!(
-            "Line number {} out of range for file {}",
-            line_number,
-            path.display()
-        )));
+        return Err(MdrefError::InvalidLineReference {
+            path: path.to_path_buf(),
+            line: line_number,
+            details: format!("line number out of range (file has {} lines)", lines.len()),
+        });
     }
 
     Ok(lines[line_number - 1].as_str())
@@ -1218,7 +1238,10 @@ fn find_reference_definition_url_span(line: &str) -> Option<(usize, usize)> {
 /// Replacements are sorted in reverse order (by line desc, then column desc) so that
 /// earlier replacements do not shift the positions of later ones.
 fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Result<()> {
-    let content = fs::read_to_string(file_path)?;
+    let content = fs::read_to_string(file_path).map_err(|e| MdrefError::IoRead {
+        path: file_path.to_path_buf(),
+        source: e,
+    })?;
     let mut lines = split_lines_preserving_endings(&content);
 
     // Sort replacements in reverse order (bottom-right to top-left) so that
@@ -1235,11 +1258,11 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
         let replacement = &replacements[idx];
 
         if replacement.line > lines.len() {
-            return Err(MdrefError::InvalidLine(format!(
-                "Line number {} out of range for file {}",
-                replacement.line,
-                file_path.display()
-            )));
+            return Err(MdrefError::InvalidLineReference {
+                path: file_path.to_path_buf(),
+                line: replacement.line,
+                details: format!("line number out of range (file has {} lines)", lines.len()),
+            });
         }
 
         let line = &lines[replacement.line - 1].0;
@@ -1258,12 +1281,13 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
             );
             lines[replacement.line - 1].0 = new_line;
         } else {
-            return Err(MdrefError::Path(format!(
-                "Could not find link '{}' in line {} of file {}",
-                replacement.old_pattern,
-                replacement.line,
-                file_path.display()
-            )));
+            return Err(MdrefError::PathValidation {
+                path: file_path.to_path_buf(),
+                details: format!(
+                    "could not find link '{}' in line {}",
+                    replacement.old_pattern, replacement.line
+                ),
+            });
         }
     }
 
@@ -1271,7 +1295,10 @@ fn apply_replacements(file_path: &Path, replacements: &[LinkReplacement]) -> Res
         .into_iter()
         .map(|(line, ending)| format!("{line}{}", ending.as_str()))
         .collect::<String>();
-    fs::write(file_path, new_content)?;
+    fs::write(file_path, new_content).map_err(|e| MdrefError::IoWrite {
+        path: file_path.to_path_buf(),
+        source: e,
+    })?;
 
     Ok(())
 }
@@ -1371,9 +1398,9 @@ mod tests {
 
         let result = apply_replacements(&file_path, &replacements);
         match result {
-            Err(MdrefError::InvalidLine(message)) => {
-                assert!(message.contains("999"));
-                assert!(message.contains("doc.md"));
+            Err(MdrefError::InvalidLineReference { path, line, .. }) => {
+                assert_eq!(line, 999);
+                assert!(path.ends_with("doc.md"));
             }
             other => panic!("expected invalid line error, got {other:?}"),
         }
@@ -1685,7 +1712,10 @@ mod tests {
         fs::remove_dir_all(snapshot_file.parent().unwrap()).unwrap();
 
         let result = execute_with_rollback(&transaction, || {
-            Err(MdrefError::Path("simulated move failure".to_string()))
+            Err(MdrefError::PathValidation {
+                path: PathBuf::from("simulated"),
+                details: "simulated move failure".to_string(),
+            })
         });
 
         match result {
@@ -1693,7 +1723,10 @@ mod tests {
                 original_error,
                 rollback_errors,
             }) => {
-                assert_eq!(original_error, "Path error: simulated move failure");
+                assert_eq!(
+                    original_error,
+                    "Path error for 'simulated': simulated move failure"
+                );
                 assert_eq!(rollback_errors.len(), 1);
                 assert!(rollback_errors[0].contains("Failed to restore"));
                 assert!(rollback_errors[0].contains("index.md"));

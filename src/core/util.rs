@@ -173,9 +173,10 @@ pub fn strip_anchor(link: &str) -> Option<&str> {
 /// by canonicalizing parent directories when possible and falling back to raw paths.
 pub fn relative_path(from: &Path, to: &Path) -> Result<PathBuf> {
     let to_resolved = resolve_path(to)?;
-    let from_parent = from
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
+    let from_parent = from.parent().ok_or_else(|| MdrefError::PathValidation {
+        path: from.to_path_buf(),
+        details: "no parent directory".to_string(),
+    })?;
     let from_resolved = if from_parent.exists() {
         from_parent.canonicalize()?
     } else {
@@ -190,12 +191,14 @@ pub fn resolve_path(path: &Path) -> Result<PathBuf> {
     if path.exists() {
         return Ok(path.canonicalize()?);
     }
-    let parent = path
-        .parent()
-        .ok_or_else(|| MdrefError::Path("No parent directory".to_string()))?;
-    let filename = path
-        .file_name()
-        .ok_or_else(|| MdrefError::Path("No file name".to_string()))?;
+    let parent = path.parent().ok_or_else(|| MdrefError::PathValidation {
+        path: path.to_path_buf(),
+        details: "no parent directory".to_string(),
+    })?;
+    let filename = path.file_name().ok_or_else(|| MdrefError::PathValidation {
+        path: path.to_path_buf(),
+        details: "no file name".to_string(),
+    })?;
     let parent_resolved = if parent.exists() {
         parent.canonicalize()?
     } else {

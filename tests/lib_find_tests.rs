@@ -18,10 +18,11 @@ use common::{fixture_multi_file_reference, fixture_unicode_paths, write_file};
 fn test_find_links_returns_error_for_nonexistent_file() {
     let result = find_links(Path::new("nonexistent.md"));
     match result {
-        Err(MdrefError::Io(error)) => {
-            assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        Err(MdrefError::IoRead { path, source }) => {
+            assert!(path.ends_with("nonexistent.md"));
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
         }
-        other => panic!("expected io error for nonexistent file, got {other:?}"),
+        other => panic!("expected io read error for nonexistent file, got {other:?}"),
     }
 }
 
@@ -36,10 +37,11 @@ fn test_find_links_invalid_utf8_input_returns_invalid_data_error() {
     let result = find_links(&path);
 
     match result {
-        Err(MdrefError::Io(error)) => {
-            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        Err(MdrefError::IoRead { path, source }) => {
+            assert!(path.ends_with("invalid.md"));
+            assert_eq!(source.kind(), std::io::ErrorKind::InvalidData);
         }
-        other => panic!("expected invalid data error for invalid utf-8, got {other:?}"),
+        other => panic!("expected io read error for invalid utf-8, got {other:?}"),
     }
 }
 
@@ -279,10 +281,11 @@ fn test_find_references_returns_error_for_nonexistent_file() {
     let result = find_references(temp_dir.path().join("ghost.md"), temp_dir.path());
 
     match result {
-        Err(MdrefError::Io(error)) => {
-            assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+        Err(MdrefError::IoRead { path, source }) => {
+            assert!(path.ends_with("ghost.md"));
+            assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
         }
-        other => panic!("expected io error for nonexistent file, got {other:?}"),
+        other => panic!("expected io read error for nonexistent file, got {other:?}"),
     }
 }
 
@@ -301,10 +304,11 @@ fn test_find_references_invalid_utf8_file_returns_invalid_data_error() {
     let result = find_references(&target, temp_dir.path());
 
     match result {
-        Err(MdrefError::Io(error)) => {
-            assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
+        Err(MdrefError::IoRead { path, source }) => {
+            assert!(path.ends_with("invalid.md"));
+            assert_eq!(source.kind(), std::io::ErrorKind::InvalidData);
         }
-        other => panic!("expected invalid data error for invalid utf-8, got {other:?}"),
+        other => panic!("expected io read error for invalid utf-8, got {other:?}"),
     }
 }
 

@@ -170,8 +170,11 @@ fn test_mv_nonexistent_source() {
     );
 
     match result {
-        Err(MdrefError::Path(message)) => {
-            assert!(message.contains("Source path does not exist"));
+        Err(MdrefError::PathValidation { path, details }) => {
+            assert!(
+                path.ends_with("nonexistent.md") || path.to_string_lossy().contains("nonexistent")
+            );
+            assert!(details.contains("source path does not exist"));
         }
         other => panic!("expected path error for nonexistent source, got {other:?}"),
     }
@@ -1472,8 +1475,8 @@ fn test_mv_destination_already_exists() {
     );
 
     match result {
-        Err(MdrefError::Path(message)) => {
-            assert!(message.contains("Destination path already exists"));
+        Err(MdrefError::PathValidation { details, .. }) => {
+            assert!(details.contains("destination path already exists"));
         }
         other => panic!("expected path error for existing destination, got {other:?}"),
     }

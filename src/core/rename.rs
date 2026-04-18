@@ -150,11 +150,11 @@ mod tests {
 
         let error = rename(&source, "taken.md", temp_dir.path(), false).unwrap_err();
 
-        assert!(matches!(error, MdrefError::Path(_)));
+        assert!(matches!(error, MdrefError::PathValidation { .. }));
         assert!(
             error
                 .to_string()
-                .contains("Destination path already exists")
+                .contains("destination path already exists")
         );
         assert!(source.exists());
         assert_eq!(fs::read_to_string(&existing_target).unwrap(), "# Existing");

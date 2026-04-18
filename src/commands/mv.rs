@@ -184,7 +184,7 @@ mod tests {
         )
         .unwrap_err();
 
-        assert!(error.to_string().contains("Source path does not exist"));
+        assert!(error.to_string().contains("source path does not exist"));
     }
 
     #[test]

@@ -40,7 +40,13 @@ where
     P: AsRef<Path>,
     B: AsRef<Path>,
 {
-    let canonical_path = path.as_ref().canonicalize()?;
+    let canonical_path = path
+        .as_ref()
+        .canonicalize()
+        .map_err(|e| crate::MdrefError::IoRead {
+            path: path.as_ref().to_path_buf(),
+            source: e,
+        })?;
     let markdown_files = collect_markdown_files(root_dir.as_ref());
 
     if let Some(progress_bar) = progress {
@@ -50,7 +56,10 @@ where
     let results: Vec<Result<Vec<Reference>>> = markdown_files
         .par_iter()
         .map(|path| {
-            let content = fs::read_to_string(path)?;
+            let content = fs::read_to_string(path).map_err(|e| crate::MdrefError::IoRead {
+                path: path.clone(),
+                source: e,
+            })?;
             let refs = process_md_file(&content, path, Some(&canonical_path));
             if let Some(progress_bar) = progress {
                 progress_bar.inc(1);
@@ -75,7 +84,10 @@ pub fn find_links<P: AsRef<Path>>(filepath: P) -> Result<Vec<Reference>> {
     if filepath.extension().and_then(|s| s.to_str()) != Some("md") {
         return Ok(Vec::new());
     }
-    let content = fs::read_to_string(filepath)?;
+    let content = fs::read_to_string(filepath).map_err(|e| crate::MdrefError::IoRead {
+        path: filepath.to_path_buf(),
+        source: e,
+    })?;
     Ok(process_md_file(&content, filepath, None))
 }
 

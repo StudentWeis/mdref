@@ -98,8 +98,11 @@ fn write_json_output<W: Write>(
         links: links.iter().map(JsonReference::from).collect(),
     };
 
-    serde_json::to_writer_pretty(&mut *writer, &payload)
-        .map_err(|error| MdrefError::Path(format!("Failed to write JSON output: {error}")))?;
+    serde_json::to_writer_pretty(&mut *writer, &payload).map_err(|error| {
+        MdrefError::SerializationFailed {
+            details: format!("failed to write JSON output: {error}"),
+        }
+    })?;
     writeln!(writer)?;
 
     Ok(())

@@ -164,8 +164,11 @@ pub fn handle_command(command: Commands, progress: bool) -> Result<()> {
 }
 
 pub fn write_json_output<W: Write, T: Serialize>(writer: &mut W, payload: &T) -> Result<()> {
-    serde_json::to_writer_pretty(&mut *writer, payload)
-        .map_err(|error| MdrefError::Path(format!("Failed to write JSON output: {error}")))?;
+    serde_json::to_writer_pretty(&mut *writer, payload).map_err(|error| {
+        MdrefError::SerializationFailed {
+            details: format!("failed to write JSON output: {error}"),
+        }
+    })?;
     writeln!(writer)?;
     Ok(())
 }
