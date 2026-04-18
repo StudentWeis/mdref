@@ -21,10 +21,16 @@ criterion = "0.8.2"
 tempfile = "3.27.0"
 rstest = "0.26.1"
 
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
 # The profile that 'dist' will build with
 [profile.dist]
 inherits = "release"
-lto = "thin"
+lto = "fat"
 
 [[bench]]
 name = "benchmark"
