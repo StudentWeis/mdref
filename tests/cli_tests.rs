@@ -91,6 +91,136 @@ fn test_cli_find_json_format_outputs_machine_readable_error() {
     assert!(payload["error"].as_str().unwrap().contains("IO error"));
 }
 
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_mv_json_format_outputs_machine_readable_payload() {
+    let temp_dir = temp_dir();
+    let source = temp_dir.path().join("doc.md");
+    let target = temp_dir.path().join("archive").join("doc.md");
+    let reference = temp_dir.path().join("index.md");
+    write_file(&source, "# Document");
+    write_file(&reference, "See [doc](doc.md) for details.");
+
+    let output = run_cli(&[
+        "mv",
+        source.to_str().unwrap(),
+        target.to_str().unwrap(),
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["operation"], "mv");
+    assert_eq!(payload["source"], source.to_str().unwrap());
+    assert_eq!(payload["destination"], target.to_str().unwrap());
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["changes"].as_array().unwrap().len(), 1);
+
+    let ref_content = read_file(&reference);
+    assert!(ref_content.contains("archive/doc.md"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_mv_json_format_outputs_machine_readable_error() {
+    let temp_dir = temp_dir();
+    let source = temp_dir.path().join("missing.md");
+    let target = temp_dir.path().join("archive").join("missing.md");
+
+    let output = run_cli(&[
+        "mv",
+        source.to_str().unwrap(),
+        target.to_str().unwrap(),
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["operation"], "mv");
+    assert_eq!(payload["source"], source.to_str().unwrap());
+    assert_eq!(payload["destination"], target.to_str().unwrap());
+    assert!(
+        payload["error"]
+            .as_str()
+            .unwrap()
+            .contains("Source path does not exist")
+    );
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_rename_json_format_outputs_machine_readable_payload() {
+    let temp_dir = temp_dir();
+    let source = temp_dir.path().join("old_doc.md");
+    let reference = temp_dir.path().join("index.md");
+    write_file(&source, "# Old Document");
+    write_file(&reference, "See [doc](old_doc.md) for info.");
+
+    let output = run_cli(&[
+        "rename",
+        source.to_str().unwrap(),
+        "new_doc.md",
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(output.status.success());
+    assert!(output.stderr.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(payload["operation"], "rename");
+    assert_eq!(payload["source"], source.to_str().unwrap());
+    assert_eq!(payload["new_name"], "new_doc.md");
+    assert_eq!(payload["dry_run"], false);
+    assert_eq!(payload["changes"].as_array().unwrap().len(), 1);
+
+    let ref_content = read_file(&reference);
+    assert!(ref_content.contains("new_doc.md"));
+}
+
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_cli_rename_json_format_outputs_machine_readable_error() {
+    let temp_dir = temp_dir();
+    let source = temp_dir.path().join("missing.md");
+
+    let output = run_cli(&[
+        "rename",
+        source.to_str().unwrap(),
+        "new_doc.md",
+        "--root",
+        temp_dir.path().to_str().unwrap(),
+        "--format",
+        "json",
+    ]);
+
+    assert!(!output.status.success());
+    assert!(output.stdout.is_empty());
+
+    let payload: Value = serde_json::from_slice(&output.stderr).unwrap();
+    assert_eq!(payload["operation"], "rename");
+    assert_eq!(payload["source"], source.to_str().unwrap());
+    assert_eq!(payload["new_name"], "new_doc.md");
+    assert!(
+        payload["error"]
+            .as_str()
+            .unwrap()
+            .contains("Source path does not exist")
+    );
+}
+
 // ============= mv command tests =============
 
 #[test]

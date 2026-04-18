@@ -19,21 +19,31 @@ struct CommandErrorOutput<'a> {
     operation: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     target: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    destination: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_name: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    dry_run: Option<bool>,
     error: String,
 }
 
-fn emit_error(
-    format: commands::OutputFormat,
-    operation: &str,
-    target: Option<&str>,
-    error: &mdref::MdrefError,
-) {
-    match format {
+fn emit_error(context: &commands::CommandOutputContext, error: &mdref::MdrefError) {
+    match context.format {
         commands::OutputFormat::Human => eprintln!("Error: {}", error),
         commands::OutputFormat::Json => {
             let payload = CommandErrorOutput {
-                operation,
-                target,
+                operation: context.operation,
+                target: context.target.as_deref(),
+                source: context.source.as_deref(),
+                destination: context.destination.as_deref(),
+                new_name: context.new_name.as_deref(),
+                root: context.root.as_deref(),
+                dry_run: context.dry_run,
                 error: error.to_string(),
             };
 
@@ -50,12 +60,10 @@ fn emit_error(
 fn main() {
     let cli = Cli::parse();
 
-    let error_format = cli.command.output_format();
-    let command_name = cli.command.name();
-    let command_target = cli.command.target().map(str::to_owned);
+    let output_context = cli.command.output_context();
 
     if let Err(e) = commands::handle_command(cli.command, cli.progress) {
-        emit_error(error_format, command_name, command_target.as_deref(), &e);
+        emit_error(&output_context, &e);
         std::process::exit(1);
     }
 }

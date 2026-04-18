@@ -57,24 +57,4 @@ follow_symlinks = false
 # 默认输出格式: human, json
 format = "human"
 ```
-
-### 3. 命令层输出格式单一
-
-**当前状态**：`find` 命令已支持 `--format json`，可输出机器可读结果，并在失败时返回 JSON 错误对象，便于集成到 CI/CD。
-
-**后续建议**：将相同的输出格式抽象扩展到 `mv` 和 `rename`，统一 dry-run 与正式执行的机器可读输出协议：
-
-```json
-{
-  "operation": "find",
-  "target": "./examples/main.md",
-  "references": [
-    {
-      "path": "./examples/other.md",
-      "line": 7,
-      "column": 1,
-      "link_text": "main.md"
-    }
-  ]
-}
 ```

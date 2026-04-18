@@ -84,6 +84,8 @@ $ mdref find ./examples/main.md --format json
 }
 ```
 
+The same `--format json` flag is available on `mv` and `rename`. Successful responses include the resolved destination, `dry_run`, and the planned or applied line replacements. Failures return JSON on stderr with the command context and error message.
+
 # Contributing
 
 If you want to submit code to this repository, please first refer to [CONTRIBUTING](CONTRIBUTING.md).

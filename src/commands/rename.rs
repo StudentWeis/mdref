@@ -1,7 +1,12 @@
 use std::io::Write;
 
 use indicatif::{ProgressBar, ProgressStyle};
-use mdref::{Result, rename_with_progress};
+use mdref::{Result, core::mv::preview_move_with_progress, rename_with_progress};
+use serde::Serialize;
+
+use crate::commands::{
+    OutputFormat, json_move_changes, write_json_output, write_move_preview_human,
+};
 
 pub fn run(
     old: String,
@@ -9,9 +14,10 @@ pub fn run(
     root: Option<String>,
     dry_run: bool,
     show_progress: bool,
+    format: OutputFormat,
 ) -> Result<()> {
     let mut stdout = std::io::stdout();
-    run_with_writer(old, new, root, dry_run, show_progress, &mut stdout)
+    run_with_writer(old, new, root, dry_run, show_progress, format, &mut stdout)
 }
 
 fn run_with_writer<W: Write>(
@@ -20,12 +26,11 @@ fn run_with_writer<W: Write>(
     root: Option<String>,
     dry_run: bool,
     show_progress: bool,
+    format: OutputFormat,
     writer: &mut W,
 ) -> Result<()> {
     let root_path = root.unwrap_or_else(|| ".".to_string());
-    if !dry_run {
-        writeln!(writer, "Rename {old} -> {new} in {root_path}")?;
-    }
+    let destination = std::path::Path::new(&old).with_file_name(&new);
 
     let progress = if show_progress && !dry_run {
         let progress_bar = ProgressBar::new_spinner();
@@ -38,21 +43,67 @@ fn run_with_writer<W: Write>(
         None
     };
 
-    let result = rename_with_progress(&old, &new, &root_path, dry_run, progress.as_ref());
+    match format {
+        OutputFormat::Human => {
+            if dry_run {
+                let preview = preview_move_with_progress(&old, &destination, &root_path, None)?;
+                return write_move_preview_human(&preview, writer);
+            }
 
-    if let Some(progress_bar) = &progress {
-        progress_bar.finish_and_clear();
+            writeln!(writer, "Rename {old} -> {new} in {root_path}")?;
+            let result = rename_with_progress(&old, &new, &root_path, false, progress.as_ref());
+
+            if let Some(progress_bar) = &progress {
+                progress_bar.finish_and_clear();
+            }
+
+            result
+        }
+        OutputFormat::Json => {
+            let preview = preview_move_with_progress(&old, &destination, &root_path, None)?;
+
+            if !dry_run {
+                rename_with_progress(&old, &new, &root_path, false, progress.as_ref())?;
+            }
+
+            if let Some(progress_bar) = &progress {
+                progress_bar.finish_and_clear();
+            }
+
+            let payload = RenameCommandOutput {
+                operation: "rename",
+                source: old,
+                new_name: new,
+                destination: preview.destination.display().to_string(),
+                root: root_path,
+                dry_run,
+                changes: json_move_changes(&preview),
+            };
+
+            write_json_output(writer, &payload)
+        }
     }
+}
 
-    result
+#[derive(Serialize)]
+struct RenameCommandOutput {
+    operation: &'static str,
+    source: String,
+    new_name: String,
+    destination: String,
+    root: String,
+    dry_run: bool,
+    changes: Vec<crate::commands::JsonMoveChange>,
 }
 
 #[cfg(test)]
 mod tests {
     use mdref::test_utils::write_file;
+    use serde_json::Value;
     use tempfile::TempDir;
 
     use super::*;
+    use crate::commands::OutputFormat;
 
     #[test]
     #[allow(clippy::unwrap_used)]
@@ -69,6 +120,7 @@ mod tests {
             Some(root.to_str().unwrap().to_string()),
             false,
             false,
+            OutputFormat::Human,
             &mut output,
         )
         .unwrap();
@@ -96,11 +148,13 @@ mod tests {
             Some(root.to_str().unwrap().to_string()),
             true,
             false,
+            OutputFormat::Human,
             &mut output,
         )
         .unwrap();
 
-        assert!(String::from_utf8(output).unwrap().is_empty());
+        let output = String::from_utf8(output).unwrap();
+        assert!(output.contains("[dry-run] Would move:"));
         assert!(source.exists());
         assert!(!root.join("published.md").exists());
     }
@@ -118,10 +172,48 @@ mod tests {
             Some(root.to_str().unwrap().to_string()),
             false,
             false,
+            OutputFormat::Human,
             &mut output,
         )
         .unwrap_err();
 
         assert!(error.to_string().contains("Source path does not exist"));
+    }
+
+    #[test]
+    #[allow(clippy::unwrap_used)]
+    fn test_rename_command_writes_json_payload_for_dry_run() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+        let source = root.join("draft.md");
+        let reference = root.join("index.md");
+        write_file(&source, "# Draft");
+        write_file(&reference, "See [Draft](draft.md)");
+
+        let mut output = Vec::new();
+        run_with_writer(
+            source.to_str().unwrap().to_string(),
+            "published.md".to_string(),
+            Some(root.to_str().unwrap().to_string()),
+            true,
+            false,
+            OutputFormat::Json,
+            &mut output,
+        )
+        .unwrap();
+
+        let payload: Value = serde_json::from_slice(&output).unwrap();
+        assert_eq!(payload["operation"], "rename");
+        assert_eq!(payload["source"], source.to_str().unwrap());
+        assert_eq!(payload["new_name"], "published.md");
+        assert_eq!(
+            payload["destination"],
+            root.join("published.md").to_str().unwrap()
+        );
+        assert_eq!(payload["dry_run"], true);
+        let changes = payload["changes"].as_array().unwrap();
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0]["path"], reference.to_str().unwrap());
+        assert_eq!(changes[0]["kind"], "reference_update");
     }
 }

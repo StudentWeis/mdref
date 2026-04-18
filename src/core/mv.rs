@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 use super::{
     find::find_references_with_progress,
-    model::{LinkReplacement, MoveTransaction},
+    model::{LinkReplacement, MoveChange, MoveChangeKind, MovePreview, MoveTransaction},
     util::{
         collect_markdown_files, is_external_url, relative_path, strip_utf8_bom_prefix,
         url_decode_link,
@@ -552,6 +552,41 @@ where
 ///
 /// When a `ProgressBar` is provided, it is used to display scanning and update progress.
 /// The caller is responsible for creating and finishing the progress bar.
+pub fn preview_move<P, B, D>(source: P, dest: B, root: D) -> Result<MovePreview>
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+    D: AsRef<Path>,
+{
+    preview_move_with_progress(source, dest, root, None)
+}
+
+/// Preview a Markdown move without mutating the filesystem.
+///
+/// The returned preview contains the resolved destination path and all link
+/// replacements that would be applied by the move.
+pub fn preview_move_with_progress<P, B, D>(
+    source: P,
+    dest: B,
+    root: D,
+    progress: Option<&ProgressBar>,
+) -> Result<MovePreview>
+where
+    P: AsRef<Path>,
+    B: AsRef<Path>,
+    D: AsRef<Path>,
+{
+    let source = source.as_ref();
+    let dest = dest.as_ref();
+    let root = root.as_ref();
+
+    if source.is_dir() {
+        return preview_directory_move(source, dest, root, progress);
+    }
+
+    preview_regular_file_move(source, dest, root, progress)
+}
+
 pub fn mv_with_progress<P, B, D>(
     source: P,
     dest: B,
@@ -573,6 +608,100 @@ where
     }
 
     mv_regular_file(source, dest, root, dry_run, progress)
+}
+
+fn preview_regular_file_move(
+    source: &Path,
+    dest: &Path,
+    root: &Path,
+    progress: Option<&ProgressBar>,
+) -> Result<MovePreview> {
+    if let Some(case_only_dest) = resolve_case_only_destination(source, dest)? {
+        return preview_case_only_file_move(source, &case_only_dest, root, progress);
+    }
+
+    let (resolved_dest, _source_canonical, _dest_canonical) =
+        match validate_move_paths(source, dest) {
+            Ok(paths) => paths,
+            Err(e) => {
+                if e.to_string().contains("resolve to the same file") {
+                    return Ok(build_move_preview(source, source, HashMap::new()));
+                }
+                return Err(e);
+            }
+        };
+
+    if let Some(progress_bar) = progress {
+        progress_bar.set_message("Scanning references...");
+    }
+    let references = find_references_with_progress(source, root, progress)?;
+    let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
+    replacements_by_file.remove(source);
+    let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
+    add_destination_replacements(
+        &mut replacements_by_file,
+        &resolved_dest,
+        internal_replacements,
+    );
+
+    Ok(build_move_preview(
+        source,
+        &resolved_dest,
+        replacements_by_file,
+    ))
+}
+
+fn preview_case_only_file_move(
+    source: &Path,
+    resolved_dest: &Path,
+    root: &Path,
+    progress: Option<&ProgressBar>,
+) -> Result<MovePreview> {
+    if let Some(progress_bar) = progress {
+        progress_bar.set_message("Scanning references...");
+    }
+    let references = find_references_with_progress(source, root, progress)?;
+    let mut replacements_by_file =
+        plan_case_only_external_replacements(&references, resolved_dest)?;
+    move_source_replacements_to_destination(&mut replacements_by_file, source, resolved_dest);
+
+    Ok(build_move_preview(
+        source,
+        resolved_dest,
+        replacements_by_file,
+    ))
+}
+
+fn preview_directory_move(
+    source_dir: &Path,
+    new_path: &Path,
+    root: &Path,
+    progress: Option<&ProgressBar>,
+) -> Result<MovePreview> {
+    let (resolved_dest, source_canonical, dest_canonical) =
+        match validate_move_paths(source_dir, new_path) {
+            Ok(paths) => paths,
+            Err(e) => {
+                if e.to_string().contains("resolve to the same file") {
+                    return Ok(build_move_preview(source_dir, source_dir, HashMap::new()));
+                }
+                return Err(e);
+            }
+        };
+
+    let (replacements_by_file, _snapshot_paths) = plan_directory_replacements(
+        source_dir,
+        &source_canonical,
+        &dest_canonical,
+        root,
+        progress,
+    )?;
+
+    Ok(build_move_preview(
+        source_dir,
+        &resolved_dest,
+        replacements_by_file,
+    ))
 }
 
 fn mv_regular_file(
@@ -613,7 +742,8 @@ fn mv_regular_file(
             &resolved_dest,
             internal_replacements,
         );
-        print_dry_run_report(source, &resolved_dest, &replacements_by_file);
+        let preview = build_move_preview(source, &resolved_dest, replacements_by_file);
+        print_dry_run_report(&preview);
         return Ok(());
     }
 
@@ -702,7 +832,8 @@ fn mv_case_only_file(
     move_source_replacements_to_destination(&mut replacements_by_file, source, resolved_dest);
 
     if dry_run {
-        print_dry_run_report(source, resolved_dest, &replacements_by_file);
+        let preview = build_move_preview(source, resolved_dest, replacements_by_file);
+        print_dry_run_report(&preview);
         return Ok(());
     }
 
@@ -755,7 +886,8 @@ fn mv_directory(
     )?;
 
     if dry_run {
-        print_dry_run_report(source_dir, &resolved_dest, &replacements_by_file);
+        let preview = build_move_preview(source_dir, &resolved_dest, replacements_by_file);
+        print_dry_run_report(&preview);
         return Ok(());
     }
 
@@ -780,35 +912,69 @@ fn mv_directory(
 }
 
 /// Print a human-readable report of all changes that would be made during a move operation.
-fn print_dry_run_report(
-    source: &Path,
-    destination: &Path,
-    replacements_by_file: &HashMap<PathBuf, Vec<LinkReplacement>>,
-) {
+fn print_dry_run_report(preview: &MovePreview) {
     println!(
         "[dry-run] Would move: {} -> {}",
-        source.display(),
-        destination.display()
+        preview.source.display(),
+        preview.destination.display()
     );
 
-    if replacements_by_file.is_empty() {
+    if preview.changes.is_empty() {
         println!("[dry-run] No references to update.");
         return;
     }
 
-    for (file_path, replacements) in replacements_by_file {
-        let label = if file_path == destination {
-            "Would update links in moved file"
-        } else {
-            "Would update reference in"
+    for change in &preview.changes {
+        let label = match change.kind {
+            MoveChangeKind::MovedFileUpdate => "Would update links in moved file",
+            MoveChangeKind::ReferenceUpdate => "Would update reference in",
         };
-        println!("[dry-run] {} {}:", label, file_path.display());
-        for replacement in replacements {
+        println!("[dry-run] {} {}:", label, change.path.display());
+        for replacement in &change.replacements {
             println!(
                 "  Line {}: {} -> {}",
                 replacement.line, replacement.old_pattern, replacement.new_pattern
             );
         }
+    }
+}
+
+fn build_move_preview(
+    source: &Path,
+    destination: &Path,
+    replacements_by_file: ReplacementPlan,
+) -> MovePreview {
+    let mut changes = replacements_by_file
+        .into_iter()
+        .map(|(path, mut replacements)| {
+            replacements.sort_by(|left, right| {
+                left.line
+                    .cmp(&right.line)
+                    .then(left.column.cmp(&right.column))
+                    .then(left.old_pattern.cmp(&right.old_pattern))
+                    .then(left.new_pattern.cmp(&right.new_pattern))
+            });
+
+            let kind = if path == destination {
+                MoveChangeKind::MovedFileUpdate
+            } else {
+                MoveChangeKind::ReferenceUpdate
+            };
+
+            MoveChange {
+                path,
+                kind,
+                replacements,
+            }
+        })
+        .collect::<Vec<_>>();
+
+    changes.sort_by(|left, right| left.path.cmp(&right.path));
+
+    MovePreview {
+        source: source.to_path_buf(),
+        destination: destination.to_path_buf(),
+        changes,
     }
 }
 
