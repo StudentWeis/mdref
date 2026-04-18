@@ -22,6 +22,15 @@ if [[ -z "$release_version" ]]; then
 	exit 1
 fi
 
-bash scripts/before_update.sh
+# Check code formatting, linting, and tests before release
+./scripts/precheck.sh
+./scripts/record_build_size.sh
+
+# Run a quick benchmark smoke check before release
+./scripts/bench.sh quick
+
 git cliff --unreleased --tag "$release_version" --prepend CHANGELOG.md
+# Remove HTML comment markers (e.g., <!-- 0 -->) from CHANGELOG.md
+# These markers are added by git-cliff as placeholders for version numbers
+perl -i -pe 's/<!-- \d+ -->//g' CHANGELOG.md
 dist plan
