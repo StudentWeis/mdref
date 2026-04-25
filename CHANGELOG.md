@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.4.4] - 2026-04-25
+
+### 🚀 Features
+- Add json output format for mv and rename commands by @StudentWeis
+- Add JSON output format for find command and update dependencies by @StudentWeis
+- Add progress bar functionality to file operations by @StudentWeis
+
+### 💼 Other
+- Optimize release profile settings for better binary size and performance by @StudentWeis
+
+### 🚜 Refactor
+- Improve error handling and consistency across modules by @StudentWeis
+
+### ⚙️ Miscellaneous Tasks
+- Add CI workflow, issue/PR templates, and contribution flow skill (#1) by @StudentWeis in [#1](https://github.com/StudentWeis/mdref/pull/1)
+- Clean up changelog and update release script checks by @StudentWeis
+
 ## [0.4.3] - 2026-04-18
 
 ### 🚀 Features
