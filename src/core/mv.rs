@@ -11,8 +11,8 @@ use super::{
     model::{LinkReplacement, MoveChange, MoveChangeKind, MovePreview, MoveTransaction},
     progress::ProgressReporter,
     util::{
-        collect_markdown_files, is_external_url, relative_path, strip_utf8_bom_prefix,
-        url_decode_link,
+        collect_markdown_files, is_external_url, relative_path, resolve_path,
+        strip_utf8_bom_prefix, url_decode_link,
     },
 };
 use crate::{LinkType, MdrefError, Reference, Result, core::pathdiff::diff_paths, find_links};
@@ -28,6 +28,37 @@ enum RegularFileMoveMethod {
 }
 
 // LinkReplacement and MoveTransaction are now defined in the model module
+
+/// Resolve a path to a canonical form suitable for **semantic comparison**
+/// between `ReplacementPlan` keys.
+///
+/// Paths enter the plan from several sources — user-supplied `source`/`dest`
+/// arguments, `WalkBuilder` output via `collect_markdown_files`, and
+/// `validate_move_paths` results — each with a different textual shape for the
+/// same filesystem entry (`examples/main.md` vs `./examples/main.md` vs a fully
+/// canonicalised absolute path). Direct `PathBuf` equality misses these, which
+/// is how #6 sneaked in.
+///
+/// We deliberately **do not** rewrite the plan's keys with the canonical form,
+/// because those keys are surfaced downstream (e.g. as `MoveChange.path` in the
+/// dry-run JSON) and should preserve the caller-supplied shape. Use this helper
+/// only for transient comparisons via [`find_matching_plan_key`].
+fn canonical_plan_key(path: &Path) -> PathBuf {
+    path.canonicalize()
+        .or_else(|_| resolve_path(path))
+        .unwrap_or_else(|_| path.to_path_buf())
+}
+
+/// Find the existing `ReplacementPlan` key that refers to the same filesystem
+/// entry as `target`, comparing via [`canonical_plan_key`]. Returns a cloned
+/// `PathBuf` so callers can pass it to `HashMap::remove` / `contains_key`
+/// without fighting the borrow checker.
+fn find_matching_plan_key(plan: &ReplacementPlan, target: &Path) -> Option<PathBuf> {
+    let target_key = canonical_plan_key(target);
+    plan.keys()
+        .find(|key| canonical_plan_key(key) == target_key)
+        .cloned()
+}
 
 /// Execute a fallible closure within a transaction context.
 /// If the closure returns an error, the transaction is rolled back automatically.
@@ -503,12 +534,16 @@ fn move_source_replacements_to_destination(
     source: &Path,
     destination: &Path,
 ) {
-    if let Some(source_replacements) = replacements_by_file.remove(source) {
-        let destination_replacements = replacements_by_file
-            .entry(destination.to_path_buf())
-            .or_default();
-        extend_unique_replacements(destination_replacements, source_replacements);
-    }
+    let Some(existing_source_key) = find_matching_plan_key(replacements_by_file, source) else {
+        return;
+    };
+    let Some(source_replacements) = replacements_by_file.remove(&existing_source_key) else {
+        return;
+    };
+    let destination_key = find_matching_plan_key(replacements_by_file, destination)
+        .unwrap_or_else(|| destination.to_path_buf());
+    let destination_replacements = replacements_by_file.entry(destination_key).or_default();
+    extend_unique_replacements(destination_replacements, source_replacements);
 }
 
 fn add_destination_replacements(
@@ -520,9 +555,9 @@ fn add_destination_replacements(
         return;
     }
 
-    let destination_replacements = replacements_by_file
-        .entry(destination.to_path_buf())
-        .or_default();
+    let destination_key = find_matching_plan_key(replacements_by_file, destination)
+        .unwrap_or_else(|| destination.to_path_buf());
+    let destination_replacements = replacements_by_file.entry(destination_key).or_default();
     extend_unique_replacements(destination_replacements, replacements);
 }
 
@@ -625,7 +660,9 @@ fn preview_regular_file_move(
     progress.set_message("Scanning references...");
     let references = find_references(source, root, progress)?;
     let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
-    replacements_by_file.remove(source);
+    if let Some(source_key) = find_matching_plan_key(&replacements_by_file, source) {
+        replacements_by_file.remove(&source_key);
+    }
     let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
     add_destination_replacements(
         &mut replacements_by_file,
@@ -718,7 +755,9 @@ fn mv_regular_file(
     progress.set_message("Scanning references...");
     let references = find_references(source, root, progress)?;
     let mut replacements_by_file = plan_external_replacements(&references, &resolved_dest)?;
-    replacements_by_file.remove(source);
+    if let Some(source_key) = find_matching_plan_key(&replacements_by_file, source) {
+        replacements_by_file.remove(&source_key);
+    }
     let internal_replacements = plan_internal_replacements(source, source, &resolved_dest)?;
 
     if dry_run {
@@ -740,7 +779,9 @@ fn mv_regular_file(
         transaction.snapshot_file(file_path)?;
     }
 
-    if !internal_replacements.is_empty() && !replacements_by_file.contains_key(source) {
+    if !internal_replacements.is_empty()
+        && find_matching_plan_key(&replacements_by_file, source).is_none()
+    {
         transaction.snapshot_file(source)?;
     }
 
@@ -821,12 +862,13 @@ fn mv_case_only_file(
     }
 
     let mut transaction = MoveTransaction::new(source.to_path_buf(), resolved_dest.to_path_buf());
-    if replacements_by_file.contains_key(resolved_dest) {
+    let dest_key_in_plan = find_matching_plan_key(&replacements_by_file, resolved_dest);
+    if dest_key_in_plan.is_some() {
         transaction.snapshot_file(source)?;
     }
     for file_path in replacements_by_file
         .keys()
-        .filter(|path| *path != resolved_dest)
+        .filter(|path| Some(*path) != dest_key_in_plan.as_ref())
     {
         transaction.snapshot_file(file_path)?;
     }
