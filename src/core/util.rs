@@ -5,6 +5,10 @@ use ignore::WalkBuilder;
 use crate::{MdrefError, Result, core::pathdiff::diff_paths};
 
 /// Collect markdown files while respecting ignore files such as `.gitignore`.
+///
+/// Returned paths are normalised: a leading `./` prefix (produced by
+/// `WalkBuilder` when `root` is `"."`) is stripped so that path shapes
+/// match user-supplied relative paths.
 pub fn collect_markdown_files(root: &Path) -> Vec<PathBuf> {
     let mut builder = WalkBuilder::new(root);
     builder.standard_filters(true).require_git(false);
@@ -18,6 +22,11 @@ pub fn collect_markdown_files(root: &Path) -> Vec<PathBuf> {
                 .is_some_and(|file_type| file_type.is_file())
         })
         .map(|entry| entry.into_path())
+        .map(|path| {
+            path.strip_prefix("./")
+                .map(|stripped| stripped.to_path_buf())
+                .unwrap_or(path)
+        })
         .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("md"))
         .collect()
 }
