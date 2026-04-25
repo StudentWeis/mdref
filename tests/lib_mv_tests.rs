@@ -1,6 +1,7 @@
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     fs,
-    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     sync::{LazyLock, Mutex},
 };
@@ -1801,6 +1802,7 @@ fn test_mv_to_nonexistent_path_still_works() {
 /// roll back: the copied destination file should be removed, and the source file should
 /// remain intact.
 #[test]
+#[cfg(unix)]
 #[allow(clippy::unwrap_used)]
 fn test_mv_rollback_on_write_failure() {
     let temp_dir = TempDir::new().unwrap();
@@ -1860,6 +1862,7 @@ fn test_mv_rollback_on_write_failure() {
 /// When a move fails mid-way through updating multiple reference files, all already-modified
 /// files should be restored to their original content.
 #[test]
+#[cfg(unix)]
 #[allow(clippy::unwrap_used)]
 fn test_mv_rollback_restores_already_modified_files() {
     let temp_dir = TempDir::new().unwrap();
@@ -1993,6 +1996,7 @@ fn test_mv_transaction_happy_path_multiple_refs() {
 
 /// Verify that when a move fails, the source file content is fully preserved.
 #[test]
+#[cfg(unix)]
 #[allow(clippy::unwrap_used)]
 fn test_mv_rollback_preserves_source_content() {
     let temp_dir = TempDir::new().unwrap();
