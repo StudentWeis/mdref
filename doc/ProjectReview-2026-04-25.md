@@ -1,39 +1,3 @@
-# mdref 项目审查与改进建议（2026-04-25）
-
-## 审查范围
-
-本次审查覆盖了以下内容：
-
-- 项目入口与发布配置：[Cargo.toml](../Cargo.toml)、[README.md](../README.md)、[CONTRIBUTING.md](../CONTRIBUTING.md)
-- 质量门禁与发布脚本：[scripts/precheck.sh](../scripts/precheck.sh)、[scripts/release_prepare.sh](../scripts/release_prepare.sh)、[scripts/bench.sh](../scripts/bench.sh)
-- 核心实现：[src/lib.rs](../src/lib.rs)、[src/main.rs](../src/main.rs)、[src/core/find.rs](../src/core/find.rs)、[src/core/mv.rs](../src/core/mv.rs)、[src/core/rename.rs](../src/core/rename.rs)
-- CLI 层：[src/commands/mod.rs](../src/commands/mod.rs)、[src/commands/find.rs](../src/commands/find.rs)、[src/commands/mv.rs](../src/commands/mv.rs)、[src/commands/rename.rs](../src/commands/rename.rs)
-- 测试与设计文档：[tests/cli_tests.rs](../tests/cli_tests.rs)、[tests/lib_mv_tests.rs](../tests/lib_mv_tests.rs)、[doc/DESIGN.md](./DESIGN.md)、[doc/TESTING.md](./TESTING.md)、[doc/DirectoryMove.md](./DirectoryMove.md)
-
-另外执行了仓库质量门禁：
-
-```bash
-./scripts/precheck.sh --check
-```
-
-结果：`cargo check`、`cargo clippy`、`cargo test`、`cargo test --benches --no-run` 全部通过；当前测试结果为 `268 passed, 1 ignored`。
-
-## 总体判断
-
-这个项目当前的基础质量是好的，问题不在“能不能工作”，而在“后续能否持续低成本演进”。
-
-做得比较扎实的部分：
-
-- CLI 与库层分离明确，公共 API 从 [src/lib.rs](../src/lib.rs) 暴露，命令行入口保持较薄。
-- 错误类型集中在 [src/error.rs](../src/error.rs)，并使用 `thiserror`，整体方向正确。
-- `mv` / `rename` 的实现已经考虑了预览、回滚、目录移动、链接重写、大小写仅变更等细节。
-- 测试面较完整，既有库级行为测试，也有 CLI 级进程契约测试。
-- 发布流程已经做了脚本化，包含格式化、lint、测试、构建体积记录、benchmark smoke check 与 changelog 生成。
-
-因此，后续改进更适合围绕“可维护性、文档一致性、API 收敛、行为边界说明”来做，而不是大面积重写。
-
-## 优先级最高的改进点
-
 ### 2. 拆分 [src/core/mv.rs](../src/core/mv.rs)，降低核心变更风险
 
 优先级：高
@@ -49,23 +13,6 @@
 - 先按职责拆分，而不是按“函数多少”拆分。
 - 比较自然的边界是：`validate`、`plan`、`apply`、`case_only`、`preview`、`transaction`。
 - 第一阶段只做模块搬迁和命名收敛，不改行为；第二阶段再考虑局部抽象优化。
-
-
-### 4. 收敛公共 API 表面积，重新评估 `*_with_progress` 这一层包装
-
-优先级：中高
-
-观察依据：
-
-- [src/lib.rs](../src/lib.rs) 目前暴露了 `find_references` / `find_references_with_progress`、`mv` / `mv_with_progress`、`rename` / `rename_with_progress` 三组 API。
-- [src/core/rename.rs](../src/core/rename.rs) 本质上又是对 `mv` 的语义包装。
-- 这套 API 没有错，但会带来接口数量扩张、示例文档重复、后续参数演进时同步改动较多的问题。
-
-建议方向：
-
-- 评估是否统一为单一 API，并把 `progress: Option<&ProgressBar>` 当作显式可选参数。
-- 如果希望保持易用性，可以引入参数结构体或 builder，而不是持续增加平行函数。
-- 若短期不改 API，也建议至少在文档中明确“哪些函数是核心入口，哪些是便捷包装”。
 
 ### 5. 把符号链接与 canonicalize 语义写进文档，而不是只留在实现和测试里
 
@@ -177,19 +124,3 @@
 
 - 先给库公开入口补齐示例与参数语义。
 - 再挑最容易被误用的函数补充失败场景说明。
-
-## 建议的实施顺序
-
-如果只安排一到两个迭代，我建议按下面顺序推进：
-
-1. 先修文档一致性：更新 [doc/DESIGN.md](./DESIGN.md)，补充 benchmark / 路径语义说明。
-2. 再做低风险重构：抽 `commands` 公共辅助逻辑。
-3. 最后处理高收益重构：拆 [src/core/mv.rs](../src/core/mv.rs)。
-
-这个顺序的好处是：先把认知成本降下来，再进入真正的结构调整，避免边改边猜系统边界。
-
-## 结论
-
-`mdref` 当前不是“需要救火”的项目，而是一个已经具备较好工程基础、值得继续打磨的项目。
-
-最有价值的下一步，不是新增很多功能，而是把已经做出来的能力讲清楚、把最重的核心文件拆开、把命令层的重复收掉。这样能显著降低未来继续扩展 `find` / `mv` / `rename` 时的心智负担和回归风险。
