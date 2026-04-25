@@ -9,6 +9,7 @@ use serde::Serialize;
 
 mod find;
 mod mv;
+pub(crate) mod progress;
 mod rename;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
