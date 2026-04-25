@@ -1,6 +1,6 @@
 use std::{fs, io::Write, path::Path};
 
-use mdref::{MdrefError, Reference, find_links, find_references};
+use mdref::{MdrefError, NoopProgress, Reference, find_links, find_references};
 use rstest::rstest;
 use tempfile::TempDir;
 
@@ -270,7 +270,7 @@ fn test_find_links_preserves_dot_slash_prefix() {
 fn test_find_references_finds_referencing_files() {
     let fixture = fixture_multi_file_reference();
 
-    let result = find_references(&fixture.target, &fixture.root).unwrap();
+    let result = find_references(&fixture.target, &fixture.root, &NoopProgress).unwrap();
     assert_eq!(result.len(), 3, "Should find 3 files referencing target.md");
 }
 
@@ -278,7 +278,11 @@ fn test_find_references_finds_referencing_files() {
 #[test]
 fn test_find_references_returns_error_for_nonexistent_file() {
     let temp_dir = TempDir::new().unwrap();
-    let result = find_references(temp_dir.path().join("ghost.md"), temp_dir.path());
+    let result = find_references(
+        temp_dir.path().join("ghost.md"),
+        temp_dir.path(),
+        &NoopProgress,
+    );
 
     match result {
         Err(MdrefError::IoRead { path, source }) => {
@@ -301,7 +305,7 @@ fn test_find_references_invalid_utf8_file_returns_invalid_data_error() {
     let invalid_ref = temp_dir.path().join("invalid.md");
     fs::write(&invalid_ref, b"[Broken](target.md)\xFF").unwrap();
 
-    let result = find_references(&target, temp_dir.path());
+    let result = find_references(&target, temp_dir.path(), &NoopProgress);
 
     match result {
         Err(MdrefError::IoRead { path, source }) => {
@@ -324,7 +328,7 @@ fn test_find_references_returns_empty_when_no_references() {
     let other = temp_dir.path().join("other.md");
     write_file(&other, "# Other\n\nNo references here");
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
     assert_eq!(
         result.len(),
         0,
@@ -348,7 +352,7 @@ fn test_find_references_only_returns_markdown_files() {
     let txt_ref = temp_dir.path().join("ref.txt");
     write_file(&txt_ref, "See target.md");
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
 
     for reference in &result {
         assert_eq!(
@@ -378,7 +382,7 @@ fn test_find_references_finds_nested_references() {
     let sibling_ref = temp_dir.path().join("other.md");
     write_file(&sibling_ref, "Check [docs](docs/target.md)");
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
     assert!(
         result.len() >= 2,
         "Should find references from different directory levels"
@@ -402,7 +406,7 @@ fn test_find_references_respects_gitignore() {
     let ignored_ref = temp_dir.path().join("ignored").join("ref.md");
     write_file(&ignored_ref, "[Ignored](../target.md)");
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
 
     assert_eq!(result.len(), 1, "Ignored markdown files should be skipped");
     assert_eq!(result[0].path, visible_ref);
@@ -425,7 +429,7 @@ fn test_find_references_handles_directory_target() {
     let ref_file = temp_dir.path().join("index.md");
     write_file(&ref_file, "See [file1](docs/file1.md)");
 
-    let result = find_references(&dir, temp_dir.path()).unwrap();
+    let result = find_references(&dir, temp_dir.path(), &NoopProgress).unwrap();
     assert!(
         !result.is_empty(),
         "Should find references to files in the directory"
@@ -443,7 +447,7 @@ fn test_find_references_detects_self_reference() {
     let target = temp_dir.path().join("self.md");
     write_file(&target, "# Self\n\n[Self link](self.md)");
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
 
     let self_refs: Vec<&Reference> = result
         .iter()
@@ -470,7 +474,7 @@ fn test_find_references_ignores_external_urls() {
         "[External](https://example.com/target.md)\n[Local](target.md)",
     );
 
-    let result = find_references(&target, temp_dir.path()).unwrap();
+    let result = find_references(&target, temp_dir.path(), &NoopProgress).unwrap();
 
     // Only the local reference should match
     assert_eq!(
@@ -555,7 +559,7 @@ fn test_find_references_handles_unicode_paths(
     let ref_file = fixture.root.join(reference_name);
     write_file(&ref_file, reference_content);
 
-    let result = find_references(&target, &fixture.root).unwrap();
+    let result = find_references(&target, &fixture.root, &NoopProgress).unwrap();
     assert_eq!(result.len(), 1, "Should find one Unicode reference");
     assert_eq!(result[0].link_text, expected_link_text);
 }

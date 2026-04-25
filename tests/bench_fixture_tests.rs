@@ -4,7 +4,7 @@ mod support;
 
 use std::path::Path;
 
-use mdref::{LinkType, find_links, find_references};
+use mdref::{LinkType, NoopProgress, find_links, find_references};
 use rstest::rstest;
 use support::{
     BenchmarkFixture, FixtureProfile, FixtureSummary, MoveOperation, build_fixture,
@@ -33,8 +33,10 @@ fn test_small_profile_reports_expected_summary() {
 fn test_fixture_reference_counts_match_summary() {
     let fixture = build_fixture(FixtureProfile::Small).unwrap();
 
-    let hot_file_references = find_references(&fixture.hot_file, &fixture.root).unwrap();
-    let bundle_references = find_references(&fixture.hot_directory, &fixture.root).unwrap();
+    let hot_file_references =
+        find_references(&fixture.hot_file, &fixture.root, &NoopProgress).unwrap();
+    let bundle_references =
+        find_references(&fixture.hot_directory, &fixture.root, &NoopProgress).unwrap();
 
     assert_eq!(
         hot_file_references.len(),
@@ -187,7 +189,7 @@ fn test_move_operation_execution_updates_paths_and_references(
     assert!(!select_source(&fixture).exists());
     assert!(select_destination(&fixture).exists());
     assert_eq!(
-        find_references(select_destination(&fixture), &fixture.root)
+        find_references(select_destination(&fixture), &fixture.root, &NoopProgress)
             .unwrap()
             .len(),
         expected_references

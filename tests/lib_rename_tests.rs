@@ -1,6 +1,6 @@
 use std::fs;
 
-use mdref::rename;
+use mdref::{NoopProgress, rename};
 use rstest::rstest;
 
 mod common;
@@ -29,7 +29,7 @@ fn test_rename_same_directory_moves_file_to_new_name() {
     let source = temp_dir.path().join("source.md");
     write_file(&source, "# Source File\n\nSome content.");
 
-    let result = rename(&source, "renamed.md", temp_dir.path(), false);
+    let result = rename(&source, "renamed.md", temp_dir.path(), false, &NoopProgress);
 
     assert!(result.is_ok());
     assert!(!source.exists());
@@ -44,7 +44,14 @@ fn test_rename_preserves_content() {
     let source = temp_dir.path().join("doc.md");
     write_file(&source, content);
 
-    rename(&source, "doc_renamed.md", temp_dir.path(), false).unwrap();
+    rename(
+        &source,
+        "doc_renamed.md",
+        temp_dir.path(),
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     let renamed_path = temp_dir.path().join("doc_renamed.md");
     let result_content = read_file(&renamed_path);
@@ -62,7 +69,7 @@ fn test_rename_updates_external_references() {
     let source = fixture.target;
     let ref_file = fixture.reference;
 
-    rename(&source, "updated.md", &fixture.root, false).unwrap();
+    rename(&source, "updated.md", &fixture.root, false, &NoopProgress).unwrap();
 
     let ref_content = read_file(&ref_file);
     assert!(ref_content.contains("updated.md"));
@@ -75,7 +82,14 @@ fn test_rename_updates_multiple_external_references() {
     let fixture = fixture_multi_file_reference();
     let source = fixture.target;
 
-    rename(&source, "new_target.md", &fixture.root, false).unwrap();
+    rename(
+        &source,
+        "new_target.md",
+        &fixture.root,
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     let ref1_content = read_file(&fixture.primary_reference);
     let ref2_content = read_file(&fixture.secondary_reference);
@@ -96,7 +110,7 @@ fn test_rename_updates_self_reference() {
     let source = temp_dir.path().join("page.md");
     write_file(&source, "[Self link](page.md)");
 
-    rename(&source, "page_v2.md", temp_dir.path(), false).unwrap();
+    rename(&source, "page_v2.md", temp_dir.path(), false, &NoopProgress).unwrap();
 
     let renamed_path = temp_dir.path().join("page_v2.md");
     let content = read_file(&renamed_path);
@@ -115,7 +129,14 @@ fn test_rename_preserves_internal_links_to_other_files() {
     let source = temp_dir.path().join("source.md");
     write_file(&source, "[Other file](other.md)");
 
-    rename(&source, "source_v2.md", temp_dir.path(), false).unwrap();
+    rename(
+        &source,
+        "source_v2.md",
+        temp_dir.path(),
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     let renamed_path = temp_dir.path().join("source_v2.md");
     let content = read_file(&renamed_path);
@@ -136,7 +157,7 @@ fn test_rename_in_subdirectory() {
     let ref_file = temp_dir.path().join("root.md");
     write_file(&ref_file, "[Deep](sub/deep.md)");
 
-    rename(&source, "shallow.md", temp_dir.path(), false).unwrap();
+    rename(&source, "shallow.md", temp_dir.path(), false, &NoopProgress).unwrap();
 
     assert!(temp_dir.path().join("sub").join("shallow.md").exists());
 
@@ -159,7 +180,7 @@ fn test_rename_case_only_name_on_case_insensitive_filesystem_updates_file_and_re
     let ref_file = temp_dir.path().join("index.md");
     write_file(&ref_file, "[Guide](Readme.md)");
 
-    rename(&source, "README.md", temp_dir.path(), false).unwrap();
+    rename(&source, "README.md", temp_dir.path(), false, &NoopProgress).unwrap();
 
     let renamed = temp_dir.path().join("README.md");
     assert!(renamed.exists());
@@ -190,6 +211,7 @@ fn test_rename_nonexistent_file() {
         "new.md",
         temp_dir.path(),
         false,
+        &NoopProgress,
     );
     assert!(result.is_err());
 }
@@ -212,7 +234,7 @@ fn test_rename_unicode_filename(
     let source = temp_dir.path().join(old_name);
     write_file(&source, content);
 
-    let result = rename(&source, new_name, temp_dir.path(), false);
+    let result = rename(&source, new_name, temp_dir.path(), false, &NoopProgress);
 
     assert!(result.is_ok());
     assert!(!source.exists());
@@ -225,7 +247,14 @@ fn test_rename_unicode_filename(
 fn test_rename_unicode_updates_references() {
     let fixture = fixture_unicode_paths();
 
-    rename(&fixture.source, "更新文档.md", &fixture.root, false).unwrap();
+    rename(
+        &fixture.source,
+        "更新文档.md",
+        &fixture.root,
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     let ref_content = read_file(&fixture.reference);
     assert!(ref_content.contains("更新文档.md"));

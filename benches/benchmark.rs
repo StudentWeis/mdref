@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use mdref::{find_links, find_references};
+use mdref::{NoopProgress, find_links, find_references};
 
 mod support;
 
@@ -43,9 +43,12 @@ fn benchmark_find_operations(c: &mut Criterion) {
             &fixture,
             |b, fixture| {
                 b.iter(|| {
-                    let result =
-                        find_references(black_box(&fixture.hot_file), black_box(&fixture.root))
-                            .expect("find_references benchmark should succeed");
+                    let result = find_references(
+                        black_box(&fixture.hot_file),
+                        black_box(&fixture.root),
+                        &NoopProgress,
+                    )
+                    .expect("find_references benchmark should succeed");
                     black_box(result);
                 });
             },
@@ -60,6 +63,7 @@ fn benchmark_find_operations(c: &mut Criterion) {
                     let result = find_references(
                         black_box(&fixture.hot_directory),
                         black_box(&fixture.root),
+                        &NoopProgress,
                     )
                     .expect("find_references directory benchmark should succeed");
                     black_box(result);

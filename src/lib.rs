@@ -5,11 +5,12 @@ mod error;
 pub mod test_utils;
 
 pub use core::{
-    find::{find_links, find_references, find_references_with_progress},
+    find::{find_links, find_references},
     model::{LinkType, Reference},
-    mv::{mv, mv_with_progress},
+    mv::{mv, preview_move},
     pathdiff::diff_paths,
-    rename::{rename, rename_with_progress},
+    progress::{NoopProgress, ProgressReporter},
+    rename::rename,
 };
 
 pub use error::{MdrefError, Result};

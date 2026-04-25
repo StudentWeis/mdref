@@ -6,7 +6,7 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-use mdref::{MdrefError, find_links, find_references, mv};
+use mdref::{MdrefError, NoopProgress, find_links, find_references, mv};
 use rstest::rstest;
 use tempfile::TempDir;
 
@@ -60,6 +60,7 @@ fn test_mv_same_directory_moves_file_to_target_path() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Verify
@@ -87,6 +88,7 @@ fn test_mv_with_references() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Verify
@@ -117,6 +119,7 @@ fn test_mv_to_subdirectory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Verify
@@ -145,6 +148,7 @@ fn test_mv_with_internal_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Verify
@@ -168,6 +172,7 @@ fn test_mv_nonexistent_source() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     match result {
@@ -201,6 +206,7 @@ fn test_mv_creates_parent_directory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Should successfully create directory and move file
@@ -224,6 +230,7 @@ fn test_mv_preserves_content() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -257,6 +264,7 @@ fn test_mv_multiple_references() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -290,6 +298,7 @@ fn test_mv_same_name_different_directory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -312,7 +321,7 @@ fn test_mv_integration_with_find() {
     write_file(&ref_file, "[Source](source.md)");
 
     // Find references before move
-    let refs_before = find_references(&source_file, temp_dir.path()).unwrap();
+    let refs_before = find_references(&source_file, temp_dir.path(), &NoopProgress).unwrap();
     assert!(!refs_before.is_empty());
 
     // Move file
@@ -322,6 +331,7 @@ fn test_mv_integration_with_find() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -363,6 +373,7 @@ fn test_mv_deep_nested_move() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -399,6 +410,7 @@ fn test_mv_same_file_multiple_lines_referencing() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -423,6 +435,7 @@ fn test_mv_self_reference_update() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -449,6 +462,7 @@ fn test_mv_same_directory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -479,6 +493,7 @@ fn test_mv_with_image_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -508,6 +523,7 @@ fn test_mv_preserves_external_urls() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -538,6 +554,7 @@ fn test_mv_from_subdir_to_root() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -555,7 +572,14 @@ fn test_mv_directory_updates_external_references() {
     let fixture = fixture_directory_move();
     let target_parent = fixture.root.join("archive");
 
-    mv(&fixture.source_dir, &target_parent, &fixture.root, false).unwrap();
+    mv(
+        &fixture.source_dir,
+        &target_parent,
+        &fixture.root,
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     assert!(target_parent.join("guide.md").exists());
     assert!(target_parent.join("nested").join("topic.md").exists());
@@ -576,6 +600,7 @@ fn test_mv_directory_updates_internal_links_to_outside_files() {
         &fixture.destination_dir,
         &fixture.root,
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -591,6 +616,7 @@ fn test_mv_directory_preserves_internal_links_within_directory() {
         &fixture.destination_dir,
         &fixture.root,
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -616,7 +642,14 @@ fn test_mv_directory_skips_gitignored_markdown_rewrites() {
     write_file(&outside_file, "# FAQ");
 
     let destination = temp_dir.path().join("archive").join("docs");
-    mv(&source_dir, &destination, temp_dir.path(), false).unwrap();
+    mv(
+        &source_dir,
+        &destination,
+        temp_dir.path(),
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     let ignored_content =
         fs::read_to_string(destination.join("ignored").join("secret.md")).unwrap();
@@ -633,7 +666,14 @@ fn test_mv_directory_into_existing_directory_preserves_source_name() {
     let destination_parent = temp_dir.path().join("archive");
     fs::create_dir_all(&destination_parent).unwrap();
 
-    mv(&source_dir, &destination_parent, temp_dir.path(), false).unwrap();
+    mv(
+        &source_dir,
+        &destination_parent,
+        temp_dir.path(),
+        false,
+        &NoopProgress,
+    )
+    .unwrap();
 
     assert!(destination_parent.join("docs").join("guide.md").exists());
     assert!(!source_dir.exists());
@@ -647,7 +687,13 @@ fn test_mv_directory_rejects_moving_into_own_subdirectory() {
     write_file(source_dir.join("guide.md"), "# Guide");
     let invalid_target = source_dir.join("nested").join("archive");
 
-    let result = mv(&source_dir, &invalid_target, temp_dir.path(), false);
+    let result = mv(
+        &source_dir,
+        &invalid_target,
+        temp_dir.path(),
+        false,
+        &NoopProgress,
+    );
 
     assert!(result.is_err());
     assert!(source_dir.join("guide.md").exists());
@@ -680,6 +726,7 @@ fn test_mv_with_nonexistent_intermediate_path() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(
@@ -717,6 +764,7 @@ fn test_mv_self_reference_cross_directory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -755,6 +803,7 @@ fn test_mv_error_type_validation() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // This test just verifies that normal operation succeeds
@@ -791,6 +840,7 @@ fn test_mv_with_relative_target_path() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -845,6 +895,7 @@ fn test_mv_deep_new_directory_with_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -904,6 +955,7 @@ fn test_mv_preserves_internal_anchor_links(
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(
@@ -937,6 +989,7 @@ fn test_mv_with_broken_internal_link() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Should succeed — broken links should be skipped, not cause failure
@@ -972,6 +1025,7 @@ fn test_mv_source_equals_dest() {
         file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Should either succeed as no-op or return an error, but NOT delete the file
@@ -1021,10 +1075,18 @@ fn test_mv_same_file_path_variants_are_noops(
         "relative_to_absolute" => {
             let abs_path = file.canonicalize().unwrap();
             with_current_dir(temp_dir.path(), || {
-                mv("./test.md", abs_path.to_str().unwrap(), ".", false)
+                mv(
+                    "./test.md",
+                    abs_path.to_str().unwrap(),
+                    ".",
+                    false,
+                    &NoopProgress,
+                )
             })
         }
-        "dot_slash" => with_current_dir(temp_dir.path(), || mv("./doc.md", "./doc.md", ".", false)),
+        "dot_slash" => with_current_dir(temp_dir.path(), || {
+            mv("./doc.md", "./doc.md", ".", false, &NoopProgress)
+        }),
         "trailing_slash" => {
             let path_with_slash = format!("{}/{}", temp_dir.path().to_str().unwrap(), file_name);
             let path_without_slash = file.to_str().unwrap().to_string();
@@ -1033,6 +1095,7 @@ fn test_mv_same_file_path_variants_are_noops(
                 &path_without_slash,
                 temp_dir.path(),
                 false,
+                &NoopProgress,
             )
         }
         _ => unreachable!("unsupported scenario: {scenario}"),
@@ -1074,6 +1137,7 @@ fn test_mv_same_path_preserves_references() {
         source_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Both files should be unchanged
@@ -1108,6 +1172,7 @@ fn test_mv_symlink_to_same_file() {
             real_file.to_str().unwrap(),
             temp_dir.path(),
             false,
+            &NoopProgress,
         );
 
         // Behavior should be safe - either no-op or well-defined
@@ -1150,6 +1215,7 @@ fn test_mv_symbolic_link_reference_updates_reference() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -1175,6 +1241,7 @@ fn test_mv_reference_file_with_crlf_line_endings_preserves_line_endings() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -1223,6 +1290,7 @@ fn test_mv_handles_anchor_link_variants(
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -1262,6 +1330,7 @@ fn test_mv_preserves_anchor_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -1292,6 +1361,7 @@ fn test_mv_dry_run_does_not_move() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1324,6 +1394,7 @@ fn test_mv_dry_run_does_not_update_references() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1353,6 +1424,7 @@ fn test_mv_dry_run_does_not_create_directories() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1372,6 +1444,7 @@ fn test_mv_dry_run_validates_source() {
         temp_dir.path().join("target.md").to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(
@@ -1380,7 +1453,7 @@ fn test_mv_dry_run_validates_source() {
     );
 }
 
-/// Dry-run with rename (same directory, different name) should not modify anything.
+/// Dry-run with rename (same directory, different name, &NoopProgress) should not modify anything.
 #[test]
 #[allow(clippy::unwrap_used)]
 fn test_mv_dry_run_rename_scenario() {
@@ -1399,6 +1472,7 @@ fn test_mv_dry_run_rename_scenario() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1432,6 +1506,7 @@ fn test_mv_dry_run_with_internal_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1473,6 +1548,7 @@ fn test_mv_destination_already_exists() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     match result {
@@ -1512,6 +1588,7 @@ fn test_mv_dry_run_destination_already_exists() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     // Dry-run should also fail for existing destination
@@ -1543,6 +1620,7 @@ fn test_mv_to_existing_directory() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Operation should succeed
@@ -1590,6 +1668,7 @@ fn test_mv_to_directory_with_references() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1627,6 +1706,7 @@ fn test_mv_to_directory_updates_internal_links() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1661,6 +1741,7 @@ fn test_mv_to_nested_existing_directory() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1690,6 +1771,7 @@ fn test_mv_to_directory_dry_run() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1725,6 +1807,7 @@ fn test_mv_to_directory_file_already_exists() {
         target_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(
@@ -1760,6 +1843,7 @@ fn test_mv_to_directory_with_trailing_slash() {
         &target_with_slash,
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(
@@ -1789,6 +1873,7 @@ fn test_mv_to_nonexistent_path_still_works() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -1826,6 +1911,7 @@ fn test_mv_rollback_on_write_failure() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Restore permissions for cleanup (TempDir needs to delete files).
@@ -1897,6 +1983,7 @@ fn test_mv_rollback_restores_already_modified_files() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Restore permissions for cleanup.
@@ -1958,6 +2045,7 @@ fn test_mv_transaction_happy_path_multiple_refs() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(
@@ -2023,6 +2111,7 @@ fn test_mv_rollback_preserves_source_content() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     // Restore permissions for cleanup.
@@ -2066,6 +2155,7 @@ fn test_mv_updates_link_reference_definition_in_external_file() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2107,6 +2197,7 @@ fn test_mv_bom_prefixed_reference_definition_updates_reference() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     )
     .unwrap();
 
@@ -2133,6 +2224,7 @@ fn test_mv_updates_link_reference_definition_with_title() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2169,6 +2261,7 @@ fn test_mv_updates_link_reference_definition_with_angle_brackets() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2200,6 +2293,7 @@ fn test_mv_updates_link_reference_definition_with_extra_spaces() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2235,6 +2329,7 @@ fn test_mv_mixed_inline_and_reference_definition() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2276,6 +2371,7 @@ fn test_mv_updates_internal_link_reference_definitions() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2309,6 +2405,7 @@ fn test_mv_dry_run_with_link_reference_definitions() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -2345,6 +2442,7 @@ fn test_mv_multiple_link_reference_definitions_same_file() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2383,6 +2481,7 @@ fn test_mv_unicode_filename(
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2406,6 +2505,7 @@ fn test_mv_chinese_to_subdirectory() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -2422,6 +2522,7 @@ fn test_mv_unicode_updates_references() {
         fixture.destination.to_str().unwrap(),
         fixture.root.to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -2456,6 +2557,7 @@ fn test_mv_updates_internal_unicode_links() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -2488,6 +2590,7 @@ fn test_mv_unicode_dry_run() {
         target_file.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());
@@ -2532,6 +2635,7 @@ fn test_mv_directory_updates_image_references() {
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2580,6 +2684,7 @@ fn test_mv_directory_updates_multiple_resource_types() {
         static_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2626,6 +2731,7 @@ fn test_mv_directory_updates_nested_image_references() {
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         false,
+        &NoopProgress,
     );
 
     assert!(result.is_ok(), "mv should succeed: {:?}", result.err());
@@ -2662,6 +2768,7 @@ fn test_mv_directory_dry_run_with_images() {
         new_docs_dir.to_str().unwrap(),
         temp_dir.path().to_str().unwrap(),
         true,
+        &NoopProgress,
     );
 
     assert!(result.is_ok());

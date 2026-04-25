@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use mdref::{Result, core::mv::preview_move_with_progress, rename_with_progress};
+use mdref::{NoopProgress, Result, preview_move, rename};
 use serde::Serialize;
 
 use crate::commands::{
-    OutputFormat, json_move_changes, progress, write_json_output, write_move_preview_human,
+    OutputFormat, json_move_changes, progress::Spinner, write_json_output, write_move_preview_human,
 };
 
 pub fn run(
@@ -31,30 +31,30 @@ fn run_with_writer<W: Write>(
     let root_path = root.unwrap_or_else(|| ".".to_string());
     let destination = std::path::Path::new(&old).with_file_name(&new);
 
-    let progress = progress::create_spinner(show_progress && !dry_run);
+    let spinner = Spinner::new(show_progress && !dry_run);
 
     match format {
         OutputFormat::Human => {
             if dry_run {
-                let preview = preview_move_with_progress(&old, &destination, &root_path, None)?;
+                let preview = preview_move(&old, &destination, &root_path, &NoopProgress)?;
                 return write_move_preview_human(&preview, writer);
             }
 
             writeln!(writer, "Rename {old} -> {new} in {root_path}")?;
-            let result = rename_with_progress(&old, &new, &root_path, false, progress.as_ref());
+            let result = rename(&old, &new, &root_path, false, spinner.as_reporter());
 
-            progress::finish(&progress);
+            spinner.finish();
 
             result
         }
         OutputFormat::Json => {
-            let preview = preview_move_with_progress(&old, &destination, &root_path, None)?;
+            let preview = preview_move(&old, &destination, &root_path, &NoopProgress)?;
 
             if !dry_run {
-                rename_with_progress(&old, &new, &root_path, false, progress.as_ref())?;
+                rename(&old, &new, &root_path, false, spinner.as_reporter())?;
             }
 
-            progress::finish(&progress);
+            spinner.finish();
 
             let payload = RenameCommandOutput {
                 operation: "rename",
