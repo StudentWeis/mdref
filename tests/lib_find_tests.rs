@@ -563,3 +563,42 @@ fn test_find_references_handles_unicode_paths(
     assert_eq!(result.len(), 1, "Should find one Unicode reference");
     assert_eq!(result[0].link_text, expected_link_text);
 }
+
+// ============= Path normalization tests =============
+
+/// Regression test for #8.
+///
+/// When `root` is `"."`, `find_references` should return `Reference.path` values
+/// without a `./` prefix — they should match the shape a user would type on the
+/// command line (e.g. `sub/ref.md`, not `./sub/ref.md`).
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_find_references_paths_have_no_dot_slash_prefix() {
+    let temp_dir = TempDir::new().unwrap();
+    let target = temp_dir.path().join("target.md");
+    write_file(&target, "# Target");
+
+    let sub_dir = temp_dir.path().join("sub");
+    fs::create_dir_all(&sub_dir).unwrap();
+    let ref_file = sub_dir.join("ref.md");
+    write_file(&ref_file, "[Link](../target.md)");
+
+    // Use "." as root — this is the shape that triggers WalkBuilder's ./ prefix.
+    let original_dir = std::env::current_dir().unwrap();
+    std::env::set_current_dir(temp_dir.path()).unwrap();
+
+    let result = find_references("target.md", ".", &NoopProgress).unwrap();
+
+    std::env::set_current_dir(&original_dir).unwrap();
+
+    assert_eq!(result.len(), 1, "Should find exactly one reference");
+    let ref_path = result[0].path.to_string_lossy();
+    assert!(
+        !ref_path.starts_with("./"),
+        "Reference path should not have ./ prefix, got: {ref_path}"
+    );
+    assert_eq!(
+        ref_path, "sub/ref.md",
+        "Reference path should be a clean relative path"
+    );
+}
