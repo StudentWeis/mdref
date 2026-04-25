@@ -1,29 +1,50 @@
-Thanks to contribute to the mdref project!
+# Contributing to mdref
 
-There are some things to note before you submit your PR.
+Thank you for considering contributing to mdref!
 
-1. AI-assisted code generation is permitted, but it must be manually reviewed by the contributor and indicated as "AI-assisted" in the PR.
+## Release
 
-# Test
+Releases are managed by `cargo-release`. Run `scripts/update_version.sh` to trigger the flow:
 
-```sh
-./target/release/mdref rename ./examples/main.md test.md
-./target/release/mdref rename ./examples/test.md main.md
+```bash
+scripts/update_version.sh patch                   # dry-run a patch bump
+scripts/update_version.sh 0.5.0 --execute         # release 0.5.0
 ```
 
-# Bench
+The release pipeline (`cargo release`) automatically:
+1. Bumps the version in `Cargo.toml` `[package]`.
+2. Updates README installer links via `pre-release-replacements`.
+3. Runs `scripts/release_prepare.sh` (pre-release hook) which executes `precheck.sh`, `record_build_size.sh`, a benchmark smoke test, generates the changelog with `git-cliff`, and verifies `dist plan`.
+4. Commits, tags, and pushes — triggering the GitHub Actions release workflow.
 
-```sh
-cargo bench
+## Code Style
+
+- Follow [Clean Code](https://www.oreilly.com/library/view/clean-code-a/9780136083238/) principles
+- Keep code simple (KISS) and avoid repetition (DRY)
+- Use `thiserror` to define error types
+- Before committing code, run the check script:
+
+   ```bash
+   ./scripts/precheck.sh
+   ```
+
+## Testing
+
+See the [Testing Documentation](./doc/TESTING.md) for guidelines on writing and running tests.
+
+## Benchmarks
+
+```bash
+cargo bench                 # full benchmark suite
+./scripts/bench.sh quick    # quick smoke test
 ```
 
-# Release
+## Submitting Changes
 
-```sh
-./scripts/update_version.sh patch
-./scripts/update_version.sh 0.5.0 --execute
-```
+mdref follows an **Issue → Branch → PR → Squash Merge** workflow, executed via the local `gh` CLI. The complete, copy-paste-ready SOP lives in the [`mdref-contribution-flow`](./.agents/skills/mdref-contribution-flow/SKILL.md) skill — it is the single source of truth for branch naming, commit conventions, the `scripts/precheck.sh` gate, and the PR self-check. Both human and AI contributors should follow it.
 
-The wrapper delegates to `cargo release`. README installer links are updated via
-`cargo release` replacements, and changelog generation plus release checks run in
-the pre-release hook.
+## Reporting Issues
+
+If you find a bug or have a feature suggestion, please submit it on the [Issues](https://github.com/StudentWeis/mdref/issues) page using the matching template.
+
+Thank you for your contribution!
