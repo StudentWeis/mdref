@@ -1,11 +1,10 @@
 use std::io::Write;
 
-use indicatif::{ProgressBar, ProgressStyle};
 use mdref::{Result, core::mv::preview_move_with_progress, mv_with_progress};
 use serde::Serialize;
 
 use crate::commands::{
-    OutputFormat, json_move_changes, write_json_output, write_move_preview_human,
+    OutputFormat, json_move_changes, progress, write_json_output, write_move_preview_human,
 };
 
 pub fn run(
@@ -39,16 +38,7 @@ fn run_with_writer<W: Write>(
 ) -> Result<()> {
     let root = root.unwrap_or_else(|| ".".to_string());
 
-    let progress = if show_progress && !dry_run {
-        let progress_bar = ProgressBar::new_spinner();
-        progress_bar.set_style(
-            ProgressStyle::with_template("{spinner:.green} [{pos}/{len}] {msg}")
-                .expect("valid template"),
-        );
-        Some(progress_bar)
-    } else {
-        None
-    };
+    let progress = progress::create_spinner(show_progress && !dry_run);
 
     match format {
         OutputFormat::Human => {
@@ -60,9 +50,7 @@ fn run_with_writer<W: Write>(
             writeln!(writer, "Move {source} -> {dest} in {root}")?;
             let result = mv_with_progress(&source, &dest, &root, false, progress.as_ref());
 
-            if let Some(progress_bar) = &progress {
-                progress_bar.finish_and_clear();
-            }
+            progress::finish(&progress);
 
             result
         }
@@ -73,9 +61,7 @@ fn run_with_writer<W: Write>(
                 mv_with_progress(&source, &dest, &root, false, progress.as_ref())?;
             }
 
-            if let Some(progress_bar) = &progress {
-                progress_bar.finish_and_clear();
-            }
+            progress::finish(&progress);
 
             let payload = MoveCommandOutput {
                 operation: "mv",
