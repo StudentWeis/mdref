@@ -2785,3 +2785,74 @@ fn test_mv_directory_dry_run_with_images() {
         "Dry-run should not modify references"
     );
 }
+
+// ============= Regression tests for #6: relative source + self-reference =============
+
+/// Regression test for #6.
+///
+/// When the user invokes `mv` from a shell cwd with a **relative** source path
+/// (no leading `./`) and `root="."`, the self-reference inside the source file
+/// must still be recognised and rewritten — previously the `HashMap` key
+/// comparison missed the self-reference entry because `WalkBuilder` produced
+/// paths with a `./` prefix while the user supplied a bare relative path,
+/// causing `apply_replacements` to read the stale pre-move path and fail.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_relative_source_with_self_reference_succeeds() {
+    let temp_dir = TempDir::new().unwrap();
+    write_file(temp_dir.path().join("page.md"), "[Self](page.md)\n");
+
+    with_current_dir(temp_dir.path(), || {
+        let result = mv("page.md", "./moved.md", ".", false, &NoopProgress);
+        assert!(
+            result.is_ok(),
+            "mv with bare relative source should succeed, got: {:?}",
+            result.err()
+        );
+    });
+
+    let source = temp_dir.path().join("page.md");
+    let target = temp_dir.path().join("moved.md");
+    assert!(!source.exists(), "source should have been removed");
+    assert!(target.exists(), "target should have been created");
+
+    let content = fs::read_to_string(&target).unwrap();
+    assert!(
+        content.contains("moved.md"),
+        "self-reference should be rewritten to new filename, got: {content}"
+    );
+    assert!(
+        !content.contains("page.md"),
+        "old self-reference must not survive, got: {content}"
+    );
+}
+
+/// Regression test for #6.
+///
+/// A cross-reference from another file must still be rewritten when the user
+/// supplies `source` as a bare relative path and `root="."`. Before the fix
+/// the external-reference path happened to work (the `WalkBuilder`-produced
+/// path was consistently used on both sides), but we lock in the end-to-end
+/// guarantee here so future refactors can't regress it.
+#[test]
+#[allow(clippy::unwrap_used)]
+fn test_mv_relative_source_rewrites_external_reference() {
+    let temp_dir = TempDir::new().unwrap();
+    write_file(temp_dir.path().join("page.md"), "# Page\n");
+    write_file(temp_dir.path().join("ref.md"), "[Link](page.md)\n");
+
+    with_current_dir(temp_dir.path(), || {
+        let result = mv("page.md", "./moved.md", ".", false, &NoopProgress);
+        assert!(result.is_ok(), "mv should succeed, got: {:?}", result.err());
+    });
+
+    let ref_content = fs::read_to_string(temp_dir.path().join("ref.md")).unwrap();
+    assert!(
+        ref_content.contains("moved.md"),
+        "external reference should point to the new filename, got: {ref_content}"
+    );
+    assert!(
+        !ref_content.contains("page.md"),
+        "old external reference must not survive, got: {ref_content}"
+    );
+}
