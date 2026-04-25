@@ -1,9 +1,9 @@
 use std::io::Write;
 
-use mdref::{MdrefError, Reference, Result, find_links, find_references_with_progress};
+use mdref::{MdrefError, Reference, Result, find_links, find_references};
 use serde::Serialize;
 
-use super::{OutputFormat, progress};
+use super::{OutputFormat, progress::Spinner};
 
 pub fn run(
     path: String,
@@ -25,11 +25,11 @@ fn run_with_writer<W: Write>(
     let root_path = root_dir.unwrap_or_else(|| ".".to_string());
 
     // Find references to the specified file.
-    let progress = progress::create_spinner(show_progress);
+    let spinner = Spinner::new(show_progress);
 
-    let references = find_references_with_progress(&path, &root_path, progress.as_ref())?;
+    let references = find_references(&path, &root_path, spinner.as_reporter())?;
 
-    progress::finish(&progress);
+    spinner.finish();
 
     // Find all links within the specified file.
     let links = find_links(&path)?;

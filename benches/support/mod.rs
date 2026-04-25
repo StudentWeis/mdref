@@ -5,7 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use mdref::{Result, diff_paths, mv};
+use mdref::{NoopProgress, Result, diff_paths, mv};
 use tempfile::TempDir;
 
 const FIXED_MARKDOWN_FILES: usize = 4;
@@ -121,6 +121,7 @@ pub fn run_move_operation(operation: MoveOperation<'_>) -> Result<()> {
         black_box(operation.destination),
         black_box(operation.root),
         false,
+        &NoopProgress,
     )
 }
 

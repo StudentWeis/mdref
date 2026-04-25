@@ -1,10 +1,10 @@
 use std::io::Write;
 
-use mdref::{Result, core::mv::preview_move_with_progress, mv_with_progress};
+use mdref::{NoopProgress, Result, mv, preview_move};
 use serde::Serialize;
 
 use crate::commands::{
-    OutputFormat, json_move_changes, progress, write_json_output, write_move_preview_human,
+    OutputFormat, json_move_changes, progress::Spinner, write_json_output, write_move_preview_human,
 };
 
 pub fn run(
@@ -38,30 +38,30 @@ fn run_with_writer<W: Write>(
 ) -> Result<()> {
     let root = root.unwrap_or_else(|| ".".to_string());
 
-    let progress = progress::create_spinner(show_progress && !dry_run);
+    let spinner = Spinner::new(show_progress && !dry_run);
 
     match format {
         OutputFormat::Human => {
             if dry_run {
-                let preview = preview_move_with_progress(&source, &dest, &root, None)?;
+                let preview = preview_move(&source, &dest, &root, &NoopProgress)?;
                 return write_move_preview_human(&preview, writer);
             }
 
             writeln!(writer, "Move {source} -> {dest} in {root}")?;
-            let result = mv_with_progress(&source, &dest, &root, false, progress.as_ref());
+            let result = mv(&source, &dest, &root, false, spinner.as_reporter());
 
-            progress::finish(&progress);
+            spinner.finish();
 
             result
         }
         OutputFormat::Json => {
-            let preview = preview_move_with_progress(&source, &dest, &root, None)?;
+            let preview = preview_move(&source, &dest, &root, &NoopProgress)?;
 
             if !dry_run {
-                mv_with_progress(&source, &dest, &root, false, progress.as_ref())?;
+                mv(&source, &dest, &root, false, spinner.as_reporter())?;
             }
 
-            progress::finish(&progress);
+            spinner.finish();
 
             let payload = MoveCommandOutput {
                 operation: "mv",

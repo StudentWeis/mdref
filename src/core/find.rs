@@ -9,32 +9,32 @@ use comrak::{
     nodes::{AstNode, NodeValue},
     parse_document,
 };
-use indicatif::ProgressBar;
 use rayon::prelude::*;
 
-use super::util::{
-    collect_markdown_files, is_external_url, strip_anchor, strip_utf8_bom_prefix, url_decode_link,
+use super::{
+    progress::ProgressReporter,
+    util::{
+        collect_markdown_files, is_external_url, strip_anchor, strip_utf8_bom_prefix,
+        url_decode_link,
+    },
 };
 use crate::{Reference, Result};
 
 /// Find all references to a given file within Markdown files in the specified root directory.
-/// Returns a vector of References containing the referencing file path, line number, column number, and the link text.
-pub fn find_references<P, B>(path: P, root_dir: B) -> Result<Vec<Reference>>
-where
-    P: AsRef<Path>,
-    B: AsRef<Path>,
-{
-    find_references_with_progress(path, root_dir, None)
-}
-
-/// Find all references with an optional progress bar.
 ///
-/// When a `ProgressBar` is provided, it is incremented once for each Markdown file scanned.
-/// The caller is responsible for creating and finishing the progress bar.
-pub fn find_references_with_progress<P, B>(
+/// Returns a vector of [`Reference`]s containing the referencing file path, line number,
+/// column number, and the link text.
+///
+/// # Progress
+///
+/// Callers report progress through a [`ProgressReporter`] trait object. Pass
+/// [`crate::NoopProgress`] (as `&NoopProgress`) when progress updates are not needed.
+/// The reporter is called with [`ProgressReporter::set_total`] once before scanning,
+/// and with [`ProgressReporter::inc`] once per Markdown file as it is processed.
+pub fn find_references<P, B>(
     path: P,
     root_dir: B,
-    progress: Option<&ProgressBar>,
+    progress: &dyn ProgressReporter,
 ) -> Result<Vec<Reference>>
 where
     P: AsRef<Path>,
@@ -49,9 +49,7 @@ where
         })?;
     let markdown_files = collect_markdown_files(root_dir.as_ref());
 
-    if let Some(progress_bar) = progress {
-        progress_bar.set_length(markdown_files.len() as u64);
-    }
+    progress.set_total(markdown_files.len() as u64);
 
     let results: Vec<Result<Vec<Reference>>> = markdown_files
         .par_iter()
@@ -61,9 +59,7 @@ where
                 source: e,
             })?;
             let refs = process_md_file(&content, path, Some(&canonical_path));
-            if let Some(progress_bar) = progress {
-                progress_bar.inc(1);
-            }
+            progress.inc(1);
             Ok(refs)
         })
         .collect();
