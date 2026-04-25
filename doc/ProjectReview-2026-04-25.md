@@ -34,22 +34,6 @@
 
 ## 优先级最高的改进点
 
-### 1. 同步设计文档与当前实现，避免文档成为误导源
-
-优先级：高
-
-观察依据：
-
-- [doc/DESIGN.md](./DESIGN.md) 目前只列出 `find`、`move`，并把 `validate`、`report` 写成潜在特性。
-- 但当前实现已经明确支持 `rename`、`dry-run`、JSON 输出、目录移动、事务式回滚、`.gitignore` 感知扫描等能力。
-- [README.md](../README.md) 已描述部分能力，但设计文档没有同步到位，容易让贡献者对系统边界产生错误判断。
-
-建议方向：
-
-- 重写 [doc/DESIGN.md](./DESIGN.md)，改成“当前实现 + 已知边界 + 后续路线图”的结构。
-- 把“已实现能力”和“未来候选能力”明确分开，不要混写在同一层级。
-- 补充 `rename`、目录移动、回滚模型、JSON 输出契约、忽略规则等内容。
-
 ### 2. 拆分 [src/core/mv.rs](../src/core/mv.rs)，降低核心变更风险
 
 优先级：高
@@ -66,21 +50,6 @@
 - 比较自然的边界是：`validate`、`plan`、`apply`、`case_only`、`preview`、`transaction`。
 - 第一阶段只做模块搬迁和命名收敛，不改行为；第二阶段再考虑局部抽象优化。
 
-### 3. 收敛 CLI 层重复逻辑，减少命令实现的平行分叉
-
-优先级：中高
-
-观察依据：
-
-- [src/commands/find.rs](../src/commands/find.rs)、[src/commands/mv.rs](../src/commands/mv.rs)、[src/commands/rename.rs](../src/commands/rename.rs) 都在重复创建 `ProgressBar`、设置样式、结束进度条、在 human/json 输出之间分支。
-- JSON 序列化的公共部分已经在 [src/commands/mod.rs](../src/commands/mod.rs) 里抽了一部分，但运行流程仍然分散。
-- `rename` 与 `mv` 的命令层尤其相似，只是输入语义不同。
-
-建议方向：
-
-- 在 `commands` 下新增轻量辅助模块，例如 `progress.rs` 或 `ui.rs`。
-- 抽出统一的进度条创建逻辑与“完成后清理”逻辑。
-- 对 `mv` / `rename` 的 dry-run 与 json 输出路径做更强的共享封装，减少双份维护。
 
 ### 4. 收敛公共 API 表面积，重新评估 `*_with_progress` 这一层包装
 
