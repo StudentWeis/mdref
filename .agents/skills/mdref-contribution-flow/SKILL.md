@@ -110,7 +110,6 @@ Push more commits to the same branch. **No force-push after review starts** unle
 
 ```bash
 gh pr merge <N> --squash --delete-branch
-git checkout main && git pull --ff-only
 git checkout main && git pull --ff-only && git fetch --prune
 ```
 
